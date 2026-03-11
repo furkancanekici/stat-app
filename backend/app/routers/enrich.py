@@ -1,105 +1,152 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import Response
-from app.core.ifc_reader import read_ifc
 from app.core.excel_reader import read_excel
+from app.core.connectivity_reader import read_connectivity
 from app.core.element_matcher import match_elements
-from app.core.ifc_enricher import enrich_ifc
-from app.models.unified_element import Status
+from app.core.rule_engine import apply_rules
+from app.core.ifc_writer import write_enriched_ifc
 
 router = APIRouter()
 
-
 @router.post("/enrich")
-async def enrich(
-    ifc_file: UploadFile = File(...),
+async def enrich_model(
     excel_file: UploadFile = File(...),
 ):
-    """
-    IFC + Excel alır, enriched IFC döner.
-    """
-    if not ifc_file.filename.endswith(".ifc"):
-        raise HTTPException(400, "Geçersiz dosya: .ifc uzantısı gerekli")
-    if not excel_file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(400, "Geçersiz dosya: .xlsx veya .xls uzantısı gerekli")
-
-    ifc_bytes = await ifc_file.read()
     excel_bytes = await excel_file.read()
-
-    # Oku
-    try:
-        ifc_elements, ifc_version = read_ifc(ifc_bytes)
-    except Exception as e:
-        raise HTTPException(400, f"IFC okunamadı: {str(e)}")
 
     excel_rows, missing_cols = read_excel(excel_bytes)
     if missing_cols:
-        raise HTTPException(400, f"Eksik sütunlar: {missing_cols}")
+        raise HTTPException(status_code=400, detail=f"Eksik sütunlar: {missing_cols}")
 
-    # Eşleştir
-    matched_elements = match_elements(ifc_elements, excel_rows)
+    connectivity = read_connectivity(excel_bytes)
 
-    # Zenginleştir
-    try:
-        enriched_bytes = enrich_ifc(ifc_bytes, matched_elements)
-    except Exception as e:
-        raise HTTPException(500, f"IFC zenginleştirme hatası: {str(e)}")
+    # IFC elemanlarını connectivity'den oluştur
+    ifc_elements = _build_ifc_elements_from_connectivity(connectivity, excel_rows)
 
-    filename = ifc_file.filename.replace(".ifc", "_enriched.ifc")
+    matched = match_elements(ifc_elements, excel_rows)
+    enriched = apply_rules(matched)
+
+    ifc_bytes = write_enriched_ifc(enriched, connectivity)
 
     return Response(
-        content=enriched_bytes,
+        content=ifc_bytes,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": "attachment; filename=enriched.ifc"},
     )
 
-
 @router.post("/summary")
-async def summary(
-    ifc_file: UploadFile = File(...),
+async def get_summary(
     excel_file: UploadFile = File(...),
 ):
-    """
-    Enrichment sonrası özet istatistikler.
-    """
-    ifc_bytes = await ifc_file.read()
     excel_bytes = await excel_file.read()
 
-    ifc_elements, _ = read_ifc(ifc_bytes)
     excel_rows, missing_cols = read_excel(excel_bytes)
-
     if missing_cols:
-        raise HTTPException(400, f"Eksik sütunlar: {missing_cols}")
+        raise HTTPException(status_code=400, detail=f"Eksik sütunlar: {missing_cols}")
 
-    matched_elements = match_elements(ifc_elements, excel_rows)
+    connectivity = read_connectivity(excel_bytes)
+    ifc_elements = _build_ifc_elements_from_connectivity(connectivity, excel_rows)
 
-    # Durum sayıları
-    status_counts = {}
-    for el in matched_elements:
-        key = el.status.value if el.status else "UNMATCHED"
-        status_counts[key] = status_counts.get(key, 0) + 1
+    matched = match_elements(ifc_elements, excel_rows)
+    enriched = apply_rules(matched)
 
-    # Kat bazlı dağılım
-    story_map = {}
-    for el in matched_elements:
-        story = el.ifc_story or "Bilinmiyor"
-        if story not in story_map:
-            story_map[story] = {"story": story, "total": 0, "fail": 0, "warning": 0}
-        story_map[story]["total"] += 1
-        if el.status == Status.FAIL:
-            story_map[story]["fail"] += 1
-        if el.status == Status.WARNING:
-            story_map[story]["warning"] += 1
+    # Özet istatistikler
+    from collections import defaultdict
+    status_counts = defaultdict(int)
+    by_story_map = defaultdict(lambda: defaultdict(int))
+    unmatched = []
 
-    # Eşleşmeyen elemanlar
-    unmatched = [
-        el.ifc_global_id
-        for el in matched_elements
-        if el.status == Status.UNMATCHED
+    for el in enriched:
+        status = el.get("status", "UNMATCHED")
+        story = el.get("ifc_story", "")
+        status_counts[status] += 1
+        by_story_map[story]["total"] += 1
+        if status == "FAIL":
+            by_story_map[story]["fail"] += 1
+        elif status == "WARNING":
+            by_story_map[story]["warning"] += 1
+        if status == "UNMATCHED":
+            unmatched.append(el.get("ifc_name", ""))
+
+    by_story = [
+        {
+            "story": story,
+            "total": counts["total"],
+            "fail": counts.get("fail", 0),
+            "warning": counts.get("warning", 0),
+        }
+        for story, counts in sorted(by_story_map.items())
     ]
 
     return {
-        "total":             len(matched_elements),
-        "status_counts":     status_counts,
-        "by_story":          list(story_map.values()),
+        "total": len(enriched),
+        "status_counts": dict(status_counts),
+        "by_story": by_story,
         "unmatched_elements": unmatched,
+        "elements": enriched,
     }
+
+
+def _build_ifc_elements_from_connectivity(connectivity: dict, excel_rows: list[dict] = None) -> list[dict]:
+    from app.utils.normalize import normalize_label
+    import uuid
+
+    points = connectivity.get("points", {})
+    beams = connectivity.get("beams", {})
+    columns = connectivity.get("columns", {})
+
+    # Story elevasyonları — Story1=0, Story2=3, Story3=6 vb.
+    story_elevs = {}
+    if excel_rows:
+        stories = sorted(set(r.get("excel_story", "") for r in excel_rows if r.get("excel_story")))
+        for i, s in enumerate(stories):
+            story_elevs[s] = i * 3.0
+
+    elements = []
+
+    # Excel'deki her Story+Label kombinasyonu için eleman oluştur
+    if excel_rows:
+        seen = set()
+        for row in excel_rows:
+            label = row.get("excel_label", "")
+            story = row.get("excel_story", "")
+            key = (story, label)
+            if key in seen or not label or not story:
+                continue
+            seen.add(key)
+
+            elev = story_elevs.get(story, 0.0)
+            el_type = "IfcBeam" if label.startswith("B") else "IfcColumn"
+
+            x, y = 0.0, 0.0
+            pi, pj = "", ""
+            if el_type == "IfcBeam" and label in beams:
+                pi = beams[label].get("pi", "")
+                pj = beams[label].get("pj", "")
+                if pi in points and pj in points:
+                    x = (points[pi]["x"] + points[pj]["x"]) / 2
+                    y = (points[pi]["y"] + points[pj]["y"]) / 2
+            elif el_type == "IfcColumn" and label in columns:
+                pi = columns[label].get("pi", "")
+                if pi in points:
+                    x = points[pi]["x"]
+                    y = points[pi]["y"]
+
+            el_dict = {
+                "ifc_global_id": str(uuid.uuid4()).replace("-", "")[:22],
+                "ifc_name": label,
+                "ifc_tag": normalize_label(label),
+                "ifc_type": el_type,
+                "ifc_story": story,
+                "x": x,
+                "y": y,
+                "z": elev,
+            }
+            if el_type == "IfcBeam" and pi in points and pj in points:
+                el_dict["pi_x"] = points[pi]["x"]
+                el_dict["pi_y"] = points[pi]["y"]
+                el_dict["pj_x"] = points[pj]["x"]
+                el_dict["pj_y"] = points[pj]["y"]
+            elements.append(el_dict)
+
+    return elements

@@ -52,3 +52,13 @@ def get_status_color(status: Status) -> str:
         Status.UNMATCHED: "#64748b",  # gri
     }
     return colors.get(status, "#64748b")
+
+
+def apply_rules(elements: list[dict]) -> list[dict]:
+    for el in elements:
+        uc = el.get("unity_check")
+        fm = el.get("failure_mode", "")
+        status = classify_status(uc, fm)
+        el["status"] = status.value
+        el["status_color"] = get_status_color(status)
+    return elements

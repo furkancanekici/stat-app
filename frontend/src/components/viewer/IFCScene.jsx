@@ -25,8 +25,8 @@ export default function IFCScene({ onElementClick }) {
 
     // Camera
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-    camera.position.set(10, 10, 10);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(5, 15, 25);
+    camera.lookAt(5, 5, 5);
     cameraRef.current = camera;
 
     // Renderer
@@ -56,7 +56,7 @@ export default function IFCScene({ onElementClick }) {
       camera.position.x = spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
       camera.position.y = spherical.radius * Math.cos(spherical.phi);
       camera.position.z = spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
-      camera.lookAt(0, 0, 0);
+      camera.lookAt(5, 5, 5);
     };
     updateCamera();
 
@@ -145,7 +145,10 @@ export default function IFCScene({ onElementClick }) {
 
     filtered.forEach((el, i) => {
       const color = getColor(el.status);
-      const geometry = new THREE.BoxGeometry(0.8, 2, 0.8);
+      const isBeam = el.ifc_type === "IfcBeam";
+      const geometry = isBeam
+        ? new THREE.BoxGeometry(2, 0.4, 0.4)   // yatay kiriş
+        : new THREE.BoxGeometry(0.4, 2, 0.4);  // dikey kolon
       const material = new THREE.MeshLambertMaterial({
         color: new THREE.Color(color),
         transparent: true,
@@ -153,13 +156,18 @@ export default function IFCScene({ onElementClick }) {
       });
       const mesh = new THREE.Mesh(geometry, material);
 
-      // Pozisyon — grid üzerinde düzenli diz
-      const cols = Math.ceil(Math.sqrt(filtered.length));
-      mesh.position.set(
-        (i % cols) * 1.5 - (cols * 0.75),
-        1,
-        Math.floor(i / cols) * 1.5 - (cols * 0.75)
-      );
+      // Kirişi doğru yöne döndür
+      if (isBeam) {
+        const dx = (el.pj_x ?? 1) - (el.pi_x ?? 0);
+        const dy = (el.pj_y ?? 0) - (el.pi_y ?? 0);
+        mesh.rotation.y = -Math.atan2(dy, dx);
+      }
+
+      // Gerçek koordinatları kullan
+      const x = (el.x ?? 0);
+      const z = (el.y ?? 0);
+      const y = (el.z ?? 0) + 1.5;
+      mesh.position.set(x, z + 1, y);
 
       mesh.userData.elementId = el.ifc_global_id;
       sceneRef.current.add(mesh);

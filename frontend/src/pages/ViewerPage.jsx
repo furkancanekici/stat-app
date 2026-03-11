@@ -35,19 +35,7 @@ export default function ViewerPage() {
       const storyList = summary.by_story.map((s) => s.story);
       setStories(storyList);
 
-      // Elements mock — gerçek IFC parse sonrası buraya gelecek
-      // Şimdilik summary'den türetiyoruz
-      setElements(summary.by_story.flatMap((s) =>
-        Array.from({ length: s.total }, (_, i) => ({
-          ifc_global_id: `${s.story}_${i}`,
-          ifc_name: `Eleman ${i + 1}`,
-          ifc_type: "IfcBeam",
-          ifc_story: s.story,
-          status: i < s.fail ? "FAIL" : i < s.fail + s.warning ? "WARNING" : "OK",
-          match_score: 0.9,
-          unity_check: i < s.fail ? 1.2 : 0.7,
-        }))
-      ));
+      setElements(summary.elements || []);
     } catch (err) {
       setError("Veri yüklenemedi.");
     } finally {
@@ -162,6 +150,9 @@ export default function ViewerPage() {
 
       {/* 3D Sahne */}
       <div style={{ flex: 1, position: "relative" }}>
+        <div style={{ color: 'white', fontSize: '10px', position: 'absolute', zIndex: 999 }}>
+          {JSON.stringify(elements[0])}
+        </div>
         <IFCScene onElementClick={setSelectedElement} />
         {selectedEl && (
           <DetailPanel

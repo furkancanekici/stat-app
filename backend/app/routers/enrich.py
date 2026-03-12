@@ -8,6 +8,20 @@ from app.core.ifc_writer import write_enriched_ifc
 
 router = APIRouter()
 
+# IFC Base64 charset
+_B64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"
+
+def _ifc_guid():
+    """IFC uyumlu 22 karakterlik GlobalId üretir."""
+    import uuid as _uuid
+    u = _uuid.uuid4().int
+    chars = []
+    for _ in range(22):
+        chars.append(_B64[u % 64])
+        u //= 64
+    return "".join(chars)
+
+
 @router.post("/enrich")
 async def enrich_model(
     excel_file: UploadFile = File(...),
@@ -89,7 +103,6 @@ async def get_summary(
 
 def _build_ifc_elements_from_connectivity(connectivity: dict, excel_rows: list[dict] = None) -> list[dict]:
     from app.utils.normalize import normalize_label
-    import uuid
 
     points = connectivity.get("points", {})
     beams = connectivity.get("beams", {})
@@ -116,29 +129,24 @@ def _build_ifc_elements_from_connectivity(connectivity: dict, excel_rows: list[d
             seen.add(key)
 
             elev = story_elevs.get(story, 0.0)
+            el_type = "IfcBeam" if label.startswith("B") else "IfcColumn"
 
             x, y = 0.0, 0.0
             pi, pj = "", ""
-
-            # Eleman tipini ismindeki harfe göre değil, Excel'deki tabloda nerede olduğuna göre belirle
-            if label in beams:
-                el_type = "IfcBeam"
+            if el_type == "IfcBeam" and label in beams:
                 pi = beams[label].get("pi", "")
                 pj = beams[label].get("pj", "")
                 if pi in points and pj in points:
                     x = (points[pi]["x"] + points[pj]["x"]) / 2
                     y = (points[pi]["y"] + points[pj]["y"]) / 2
-            elif label in columns:
-                el_type = "IfcColumn"
+            elif el_type == "IfcColumn" and label in columns:
                 pi = columns[label].get("pi", "")
                 if pi in points:
                     x = points[pi]["x"]
                     y = points[pi]["y"]
-            else:
-                el_type = "IfcColumn" # Varsayılan durum
 
             el_dict = {
-                "ifc_global_id": str(uuid.uuid4()).replace("-", "")[:22],
+                "ifc_global_id": _ifc_guid(),
                 "ifc_name": label,
                 "ifc_tag": normalize_label(label),
                 "ifc_type": el_type,

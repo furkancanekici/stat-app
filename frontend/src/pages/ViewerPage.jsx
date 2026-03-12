@@ -9,7 +9,7 @@ import { STATUS_COLORS, STATUS_LABELS } from "../utils/colorPalette";
 export default function ViewerPage() {
   const navigate = useNavigate();
   const {
-    ifcFile, excelFile, elements, setElements,
+    excelFile, elements, setElements,
     selectedElement, setSelectedElement,
     activeStory, setActiveStory,
     statusFilter, setStatusFilter,
@@ -21,20 +21,24 @@ export default function ViewerPage() {
   const [enriching, setEnriching] = useState(false);
 
   useEffect(() => {
-    if (!ifcFile || !excelFile) return;
+    // IFC yok artık, sadece excelFile kontrolü yeterli
+    if (!excelFile) return;
+    // Eğer elements zaten UploadPage'den geldiyse tekrar yükleme
+    if (elements.length > 0) {
+      const storySet = [...new Set(elements.map((e) => e.ifc_story).filter(Boolean))];
+      setStories(storySet.sort());
+      return;
+    }
     loadData();
   }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const summary = await getSummary(ifcFile, excelFile);
+      const summary = await getSummary(null, excelFile);
       setSummary(summary);
-
-      // Story listesi
       const storyList = summary.by_story.map((s) => s.story);
       setStories(storyList);
-
       setElements(summary.elements || []);
     } catch (err) {
       setError("Veri yüklenemedi.");
@@ -46,7 +50,7 @@ export default function ViewerPage() {
   const handleEnrich = async () => {
     setEnriching(true);
     try {
-      const blob = await enrichIFC(ifcFile, excelFile);
+      const blob = await enrichIFC(null, excelFile);
       setEnrichedIFC(blob);
       navigate("/report");
     } catch (err) {
@@ -150,9 +154,6 @@ export default function ViewerPage() {
 
       {/* 3D Sahne */}
       <div style={{ flex: 1, position: "relative" }}>
-        <div style={{ color: 'white', fontSize: '10px', position: 'absolute', zIndex: 999 }}>
-          {JSON.stringify(elements[0])}
-        </div>
         <IFCScene onElementClick={setSelectedElement} />
         {selectedEl && (
           <DetailPanel

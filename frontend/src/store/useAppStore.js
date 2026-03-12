@@ -23,7 +23,11 @@ const useAppStore = create((set) => ({
   enrichedIFC: null,
 
   // Actions
-  setFiles: (ifcFile, excelFile) => set({ ifcFile, excelFile }),
+  setFiles: (ifcFile, excelFile) => set({
+    ifcFile,
+    excelFile,
+    step: excelFile ? 3 : 1,   // Excel yüklendi → viewer açılabilir
+  }),
   setIfcVersion: (ifcVersion) => set({ ifcVersion }),
   setMatchResult: (matchResult) => set({ matchResult }),
   setElements: (elements) => set({ elements }),

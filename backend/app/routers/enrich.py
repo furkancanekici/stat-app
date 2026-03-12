@@ -116,21 +116,26 @@ def _build_ifc_elements_from_connectivity(connectivity: dict, excel_rows: list[d
             seen.add(key)
 
             elev = story_elevs.get(story, 0.0)
-            el_type = "IfcBeam" if label.startswith("B") else "IfcColumn"
 
             x, y = 0.0, 0.0
             pi, pj = "", ""
-            if el_type == "IfcBeam" and label in beams:
+
+            # Eleman tipini ismindeki harfe göre değil, Excel'deki tabloda nerede olduğuna göre belirle
+            if label in beams:
+                el_type = "IfcBeam"
                 pi = beams[label].get("pi", "")
                 pj = beams[label].get("pj", "")
                 if pi in points and pj in points:
                     x = (points[pi]["x"] + points[pj]["x"]) / 2
                     y = (points[pi]["y"] + points[pj]["y"]) / 2
-            elif el_type == "IfcColumn" and label in columns:
+            elif label in columns:
+                el_type = "IfcColumn"
                 pi = columns[label].get("pi", "")
                 if pi in points:
                     x = points[pi]["x"]
                     y = points[pi]["y"]
+            else:
+                el_type = "IfcColumn" # Varsayılan durum
 
             el_dict = {
                 "ifc_global_id": str(uuid.uuid4()).replace("-", "")[:22],

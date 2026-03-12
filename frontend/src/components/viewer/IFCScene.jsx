@@ -3,9 +3,7 @@ import * as THREE from "three";
 import { getColor } from "../../utils/colorPalette";
 import useAppStore from "../../store/useAppStore";
 
-// Kat yüksekliği (metre)
 const STORY_HEIGHT = 3.0;
-// Kesit boyutları (görsel)
 const BEAM_SECTION = 0.3;
 const COL_SECTION = 0.3;
 
@@ -16,63 +14,57 @@ export default function IFCScene({ onElementClick }) {
   const rendererRef = useRef();
   const meshesRef = useRef([]);
   const targetRef = useRef(new THREE.Vector3(5, 4.5, 5));
+  const sphericalRef = useRef({ theta: Math.PI / 4, phi: Math.PI / 3, radius: 30 });
 
-  const { ifcFile, elements, statusFilter, activeStory } = useAppStore();
+  const { elements, statusFilter, activeStory } = useAppStore();
   const [loading, setLoading] = useState(false);
 
+  // Sahne kurulumu (bir kez)
   useEffect(() => {
     const mount = mountRef.current;
     const width = mount.clientWidth;
     const height = mount.clientHeight;
 
-    // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#080b10");
     sceneRef.current = scene;
 
-    // Camera
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     cameraRef.current = camera;
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
+    // Işıklar
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
     dirLight.position.set(20, 30, 20);
     scene.add(dirLight);
 
     // Grid
-    const grid = new THREE.GridHelper(50, 50, "#1e2738", "#1e2738");
-    scene.add(grid);
+    scene.add(new THREE.GridHelper(50, 50, "#1e2738", "#1e2738"));
 
-    // Orbit controls (manual)
+    // ---- Orbit / Pan / Zoom ----
     let isMouseDown = false;
     let rightMouseDown = false;
     let lastMouse = { x: 0, y: 0 };
-    let spherical = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 30 };
+    const sph = sphericalRef.current;
 
     const updateCamera = () => {
-      const target = targetRef.current;
-      camera.position.x = target.x + spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
-      camera.position.y = target.y + spherical.radius * Math.cos(spherical.phi);
-      camera.position.z = target.z + spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
-      camera.lookAt(target);
+      const t = targetRef.current;
+      camera.position.x = t.x + sph.radius * Math.sin(sph.phi) * Math.sin(sph.theta);
+      camera.position.y = t.y + sph.radius * Math.cos(sph.phi);
+      camera.position.z = t.z + sph.radius * Math.sin(sph.phi) * Math.cos(sph.theta);
+      camera.lookAt(t);
     };
     updateCamera();
 
     const onMouseDown = (e) => {
-      if (e.button === 2) {
-        rightMouseDown = true;
-      } else {
-        isMouseDown = true;
-      }
+      if (e.button === 2) rightMouseDown = true;
+      else isMouseDown = true;
       lastMouse = { x: e.clientX, y: e.clientY };
     };
     const onMouseUp = () => { isMouseDown = false; rightMouseDown = false; };
@@ -82,69 +74,58 @@ export default function IFCScene({ onElementClick }) {
       lastMouse = { x: e.clientX, y: e.clientY };
 
       if (isMouseDown) {
-        // Orbit
-        spherical.theta -= dx * 0.005;
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.005));
+        sph.theta -= dx * 0.005;
+        sph.phi = Math.max(0.1, Math.min(Math.PI - 0.1, sph.phi + dy * 0.005));
         updateCamera();
       } else if (rightMouseDown) {
-        // Pan
-        const panSpeed = 0.03;
         const right = new THREE.Vector3();
-        const up = new THREE.Vector3(0, 1, 0);
         camera.getWorldDirection(right);
-        right.cross(up).normalize();
-        targetRef.current.addScaledVector(right, -dx * panSpeed);
-        targetRef.current.y += dy * panSpeed;
+        right.cross(new THREE.Vector3(0, 1, 0)).normalize();
+        targetRef.current.addScaledVector(right, -dx * 0.03);
+        targetRef.current.y += dy * 0.03;
         updateCamera();
       }
     };
     const onWheel = (e) => {
-      spherical.radius = Math.max(3, Math.min(150, spherical.radius + e.deltaY * 0.05));
+      sph.radius = Math.max(3, Math.min(150, sph.radius + e.deltaY * 0.05));
       updateCamera();
     };
-    const onContextMenu = (e) => e.preventDefault();
+    const onCtx = (e) => e.preventDefault();
 
     mount.addEventListener("mousedown", onMouseDown);
     mount.addEventListener("mouseup", onMouseUp);
     mount.addEventListener("mousemove", onMouseMove);
     mount.addEventListener("wheel", onWheel);
-    mount.addEventListener("contextmenu", onContextMenu);
+    mount.addEventListener("contextmenu", onCtx);
 
-    // Click — raycasting (sadece kısa click, drag değil)
-    let mouseDownPos = { x: 0, y: 0 };
-    const onClickDown = (e) => { mouseDownPos = { x: e.clientX, y: e.clientY }; };
-    const onClickUp = (e) => {
-      const dist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
-      if (dist > 5) return; // drag ise click sayma
-
+    // ---- Click (drag ile karışmasın) ----
+    let downPos = { x: 0, y: 0 };
+    const onDown2 = (e) => { downPos = { x: e.clientX, y: e.clientY }; };
+    const onUp2 = (e) => {
+      if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5) return;
       const rect = mount.getBoundingClientRect();
       const mouse = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1
       );
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(meshesRef.current);
-      if (intersects.length > 0) {
-        const mesh = intersects[0].object;
-        onElementClick && onElementClick(mesh.userData.elementId);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(mouse, camera);
+      const hits = ray.intersectObjects(meshesRef.current);
+      if (hits.length > 0) {
+        onElementClick && onElementClick(hits[0].object.userData.elementId);
       }
     };
-    mount.addEventListener("mousedown", onClickDown);
-    mount.addEventListener("mouseup", onClickUp);
+    mount.addEventListener("mousedown", onDown2);
+    mount.addEventListener("mouseup", onUp2);
 
     // Animate
     let animId;
-    const animate = () => {
-      animId = requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    };
+    const animate = () => { animId = requestAnimationFrame(animate); renderer.render(scene, camera); };
     animate();
 
     // Resize
     const onResize = () => {
-      const w = mount.clientWidth;
-      const h = mount.clientHeight;
+      const w = mount.clientWidth, h = mount.clientHeight;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -157,20 +138,20 @@ export default function IFCScene({ onElementClick }) {
       mount.removeEventListener("mouseup", onMouseUp);
       mount.removeEventListener("mousemove", onMouseMove);
       mount.removeEventListener("wheel", onWheel);
-      mount.removeEventListener("contextmenu", onContextMenu);
-      mount.removeEventListener("mousedown", onClickDown);
-      mount.removeEventListener("mouseup", onClickUp);
+      mount.removeEventListener("contextmenu", onCtx);
+      mount.removeEventListener("mousedown", onDown2);
+      mount.removeEventListener("mouseup", onUp2);
       window.removeEventListener("resize", onResize);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
     };
   }, []);
 
-  // Elemanları sahneye ekle
+  // ---- Elemanları çiz ----
   useEffect(() => {
     if (!sceneRef.current || elements.length === 0) return;
 
-    // Önceki mesh'leri temizle
+    // Temizle
     meshesRef.current.forEach((m) => {
       sceneRef.current.remove(m);
       m.geometry.dispose();
@@ -184,7 +165,6 @@ export default function IFCScene({ onElementClick }) {
       return statusOk && storyOk;
     });
 
-    // Bounding box hesapla (kamera hedefi için)
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
@@ -192,7 +172,6 @@ export default function IFCScene({ onElementClick }) {
     filtered.forEach((el) => {
       const color = getColor(el.status);
       const isBeam = el.ifc_type === "IfcBeam";
-
       const material = new THREE.MeshLambertMaterial({
         color: new THREE.Color(color),
         transparent: true,
@@ -202,61 +181,48 @@ export default function IFCScene({ onElementClick }) {
       let mesh;
 
       if (isBeam) {
-        // ---- KİRİŞ ----
-        // pi ve pj noktalarından gerçek uzunluk ve yön hesapla
+        // --- KİRİŞ ---
+        // pi/pj noktalarından gerçek uzunluk ve yön
         const pi_x = el.pi_x ?? el.x ?? 0;
         const pi_y = el.pi_y ?? el.y ?? 0;
         const pj_x = el.pj_x ?? (el.x ?? 0) + 1;
         const pj_y = el.pj_y ?? el.y ?? 0;
-        const elev = (el.z ?? 0) + STORY_HEIGHT; // kiriş kat üstünde
+        const elev = (el.z ?? 0) + STORY_HEIGHT; // kiriş kat tepesinde
 
         const dx = pj_x - pi_x;
         const dy = pj_y - pi_y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-        const realLength = Math.max(length, 0.5);
+        const length = Math.max(Math.sqrt(dx * dx + dy * dy), 0.5);
 
-        // Kiriş geometrisi — uzunluk X ekseninde
-        const geometry = new THREE.BoxGeometry(realLength, BEAM_SECTION, BEAM_SECTION);
-        mesh = new THREE.Mesh(geometry, material);
+        const geo = new THREE.BoxGeometry(length, BEAM_SECTION, BEAM_SECTION);
+        mesh = new THREE.Mesh(geo, material);
 
-        // Orta noktaya yerleştir
-        //   Three.js: X → sağ, Y → yukarı, Z → ekrana doğru
-        //   Yapı:     X → X,   Y → Z (derinlik), Z (elev) → Y (yukarı)
-        const midX = (pi_x + pj_x) / 2;
-        const midY = (pi_y + pj_y) / 2;
-        mesh.position.set(midX, elev, midY);
+        // Three.js: X=sağ, Y=yukarı, Z=derinlik
+        // Yapı:     X→X,   Y→Z,      Z(elev)→Y
+        mesh.position.set(
+          (pi_x + pj_x) / 2,
+          elev,
+          (pi_y + pj_y) / 2
+        );
+        mesh.rotation.y = -Math.atan2(dy, dx);
 
-        // Y ekseni etrafında döndür (plan görünümünde açı)
-        const angle = Math.atan2(dy, dx);
-        mesh.rotation.y = -angle;
-
-        // Bounding box güncelle
-        minX = Math.min(minX, pi_x, pj_x);
-        maxX = Math.max(maxX, pi_x, pj_x);
-        minZ = Math.min(minZ, pi_y, pj_y);
-        maxZ = Math.max(maxZ, pi_y, pj_y);
-        minY = Math.min(minY, elev);
-        maxY = Math.max(maxY, elev);
+        minX = Math.min(minX, pi_x, pj_x); maxX = Math.max(maxX, pi_x, pj_x);
+        minZ = Math.min(minZ, pi_y, pj_y); maxZ = Math.max(maxZ, pi_y, pj_y);
+        minY = Math.min(minY, elev);        maxY = Math.max(maxY, elev);
       } else {
-        // ---- KOLON ----
+        // --- KOLON ---
         const cx = el.x ?? 0;
         const cy = el.y ?? 0;
         const baseElev = el.z ?? 0;
 
-        const geometry = new THREE.BoxGeometry(COL_SECTION, STORY_HEIGHT, COL_SECTION);
-        mesh = new THREE.Mesh(geometry, material);
+        const geo = new THREE.BoxGeometry(COL_SECTION, STORY_HEIGHT, COL_SECTION);
+        mesh = new THREE.Mesh(geo, material);
 
-        // Kolon tabanından kat yüksekliğine kadar
-        // BoxGeometry merkez orijinli, yarı yükseklik kaydır
+        // Kolon tabanından kat tepesine kadar, merkez yarı yükseklikte
         mesh.position.set(cx, baseElev + STORY_HEIGHT / 2, cy);
 
-        // Bounding box güncelle
-        minX = Math.min(minX, cx);
-        maxX = Math.max(maxX, cx);
-        minZ = Math.min(minZ, cy);
-        maxZ = Math.max(maxZ, cy);
-        minY = Math.min(minY, baseElev);
-        maxY = Math.max(maxY, baseElev + STORY_HEIGHT);
+        minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+        minZ = Math.min(minZ, cy); maxZ = Math.max(maxZ, cy);
+        minY = Math.min(minY, baseElev); maxY = Math.max(maxY, baseElev + STORY_HEIGHT);
       }
 
       mesh.userData.elementId = el.ifc_global_id;
@@ -264,18 +230,24 @@ export default function IFCScene({ onElementClick }) {
       meshesRef.current.push(mesh);
     });
 
-    // Kamerayı modelin merkezine yönlendir
+    // Kamerayı modelin merkezine oturt
     if (filtered.length > 0 && isFinite(minX)) {
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
       const cz = (minZ + maxZ) / 2;
       targetRef.current.set(cx, cy, cz);
 
-      // Kamerayı güncelle
+      const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 10);
+      sphericalRef.current.radius = span * 1.5;
+
       if (cameraRef.current) {
-        const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 10);
         const cam = cameraRef.current;
-        cam.position.set(cx + span, cy + span * 0.7, cz + span);
+        const sph = sphericalRef.current;
+        cam.position.set(
+          cx + sph.radius * Math.sin(sph.phi) * Math.sin(sph.theta),
+          cy + sph.radius * Math.cos(sph.phi),
+          cz + sph.radius * Math.sin(sph.phi) * Math.cos(sph.theta)
+        );
         cam.lookAt(targetRef.current);
       }
     }

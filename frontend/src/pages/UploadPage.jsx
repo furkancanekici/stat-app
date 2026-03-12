@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAppStore from "../store/useAppStore";
 import DropZone from "../components/upload/DropZone";
-import { validateFiles } from "../services/api";
+import { validateFiles, getSummary } from "../services/api";
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -25,14 +25,14 @@ export default function UploadPage() {
       setFiles(null, excelFile);
 
       // Summary al
-      const { getSummary } = await import("../services/api");
       const summary = await getSummary(null, excelFile);
       setSummary(summary);
       setElements(summary.elements || []);
 
       navigate("/viewer");
     } catch (err) {
-      setLocalError(err.message || "Bir hata oluştu.");
+      const backendMsg = err.response?.data?.detail;
+      setLocalError(backendMsg || err.message || "Bir hata oluştu.");
     } finally {
       setLoading(false);
     }

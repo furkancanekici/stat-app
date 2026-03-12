@@ -55,10 +55,11 @@ def get_status_color(status: Status) -> str:
 
 
 def apply_rules(elements: list[dict]) -> list[dict]:
+    """
+    Eşleşen eleman listesine kural motorunu uygular ve durumları (status) atar.
+    """
     for el in elements:
-        uc = el.get("unity_check")
-        fm = el.get("failure_mode", "")
-        status = classify_status(uc, fm)
+        status = classify_status(el.get("unity_check"), el.get("failure_mode"))
         el["status"] = status.value
         el["status_color"] = get_status_color(status)
     return elements

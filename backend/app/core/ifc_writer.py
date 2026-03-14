@@ -1,5 +1,4 @@
 import math
-import re
 import uuid as _uuid
 
 _B64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"
@@ -30,32 +29,6 @@ def _f(val):
     return f"{val}"
 
 
-def _parse_section(name):
-    """Kesit adından metre cinsinden (width, height) döndürür."""
-    if not name:
-        return 0.3, 0.3
-    s = name.strip().upper()
-    # Column400x300 (mm)
-    m = re.match(r"COLUMN\s*(\d+)\s*[Xx]\s*(\d+)", s)
-    if m:
-        return int(m.group(1)) / 1000, int(m.group(2)) / 1000
-    # C30X30 (cm)
-    m = re.match(r"C\s*(\d+)\s*[Xx]\s*(\d+)", s)
-    if m:
-        return int(m.group(1)) / 100, int(m.group(2)) / 100
-    # W14X48 (AISC inch)
-    m = re.match(r"W\s*(\d+)\s*[Xx]\s*(\d+)", s)
-    if m:
-        d = int(m.group(1)) * 0.0254
-        return d * 0.6, d
-    # HEB300 etc
-    m = re.match(r"(?:HE|IPE|HEB|HEA)\s*(\d+)", s)
-    if m:
-        h = int(m.group(1)) / 1000
-        return h * 0.5, h
-    return 0.3, 0.3
-
-
 class _IdGen:
     def __init__(self, start=100):
         self._id = start
@@ -65,10 +38,13 @@ class _IdGen:
         return v
 
 
-def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
+def write_enriched_ifc(elements: list[dict], connectivity: dict, section_map: dict = None) -> bytes:
     lines = []
     def add(s):
         lines.append(s)
+
+    if section_map is None:
+        section_map = {}
 
     eid = _IdGen(100)
     points = connectivity.get("points", {})
@@ -98,22 +74,18 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
     add("#14=IFCAXIS2PLACEMENT3D(#13,#12,#10);")
     add("#15=IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,#14,$);")
 
-    # 2D origin for profiles
     add("#30=IFCCARTESIANPOINT((0.,0.));")
     add("#31=IFCDIRECTION((1.,0.));")
     add("#32=IFCAXIS2PLACEMENT2D(#30,#31);")
 
-    # Project / Site / Building
     add(f"#20=IFCPROJECT('{_ifc_guid()}',#5,'STAT Model',$,$,$,$,(#15),$);")
     add(f"#21=IFCSITE('{_ifc_guid()}',#5,'Site',$,$,#14,$,$,.ELEMENT.,$,$,$,$,$);")
     add(f"#22=IFCBUILDING('{_ifc_guid()}',#5,'Building',$,$,#14,$,$,.ELEMENT.,$,$,$);")
     add(f"#23=IFCRELAGGREGATES('{_ifc_guid()}',#5,$,$,#20,(#21));")
     add(f"#24=IFCRELAGGREGATES('{_ifc_guid()}',#5,$,$,#21,(#22));")
 
-    # ================= STATUS RENK TANIMLARI =================
-    # Her status için IfcColourRgb + IfcSurfaceStyleRendering + IfcSurfaceStyle
-    # + IfcPresentationStyleAssignment oluştur
-    style_map = {}  # status -> styled_item_style_id (presentation style assignment)
+    # ================= STATUS RENKLERI =================
+    style_map = {}
     for status, (r, g, b) in STATUS_COLORS_RGB.items():
         c_id = eid.next()
         add(f"#{c_id}=IFCCOLOURRGB($,{_f(r)},{_f(g)},{_f(b)});")
@@ -125,8 +97,7 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
         add(f"#{psa_id}=IFCPRESENTATIONSTYLEASSIGNMENT((#{ss_id}));")
         style_map[status] = psa_id
 
-    # ================= PROFILES =================
-    # Profilleri cache'le — aynı boyutlar için tekrar oluşturma
+    # ================= PROFIL CACHE =================
     profile_cache = {}
 
     def get_profile(w_m, h_m):
@@ -138,16 +109,14 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
         profile_cache[key] = p_id
         return p_id
 
-    # ================= STORIES =================
+    # ================= KATLAR =================
     stories = sorted(set(el.get("ifc_story", "") for el in elements if el.get("ifc_story")))
     story_elevs = {}
     story_ids = {}
 
     for i, sname in enumerate(stories):
         elev = i * 3.0
-        cp = eid.next()
-        ap = eid.next()
-        st = eid.next()
+        cp = eid.next(); ap = eid.next(); st = eid.next()
         add(f"#{cp}=IFCCARTESIANPOINT((0.,0.,{_f(elev)}));")
         add(f"#{ap}=IFCAXIS2PLACEMENT3D(#{cp},#12,#10);")
         add(f"#{st}=IFCBUILDINGSTOREY('{_ifc_guid()}',#5,'{sname}',$,$,#{ap},$,$,.ELEMENT.,{_f(elev)});")
@@ -158,7 +127,7 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
     agg_id = eid.next()
     add(f"#{agg_id}=IFCRELAGGREGATES('{_ifc_guid()}',#5,$,$,#22,({storey_refs}));")
 
-    # ================= ELEMENTS =================
+    # ================= ELEMANLAR =================
     rc_members = {s: [] for s in stories}
 
     for el in elements:
@@ -170,14 +139,13 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
         fm = el.get("failure_mode", "")
         combo = str(el.get("governing_combo", "")).replace("'", "")
         score = el.get("match_score") or 0.0
-        section = el.get("excel_section", "")
         guid = el.get("ifc_global_id", _ifc_guid())
         if len(guid) != 22:
             guid = _ifc_guid()
 
         elev = story_elevs.get(story, 0.0)
 
-        # ---- Coordinates ----
+        # ---- Koordinatlar ----
         if el_type == "IfcBeam" and label in beam_conn:
             pi_lbl = beam_conn[label]["pi"]
             pj_lbl = beam_conn[label]["pj"]
@@ -207,20 +175,20 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
             dx, dy, dz = 0., 0., 1.
         ndx, ndy, ndz = dx/length, dy/length, dz/length
 
-        # ---- Profile (gerçek kesit boyutu) ----
-        sec_w, sec_h = _parse_section(section)
+        # ---- Kesit boyutu — element'ten al (enrich.py'de atanmış) ----
+        sec_w = el.get("sec_width", 0.3)
+        sec_h = el.get("sec_depth", 0.3)
         profile = get_profile(sec_w, sec_h)
 
         # ---- Body: extrude along local Z ----
-        ext_pos_cp = eid.next()
-        ext_pos = eid.next()
+        ext_pos_cp = eid.next(); ext_pos = eid.next()
         add(f"#{ext_pos_cp}=IFCCARTESIANPOINT((0.,0.,0.));")
         add(f"#{ext_pos}=IFCAXIS2PLACEMENT3D(#{ext_pos_cp},#12,#10);")
 
         ext = eid.next()
         add(f"#{ext}=IFCEXTRUDEDAREASOLID(#{profile},#{ext_pos},#12,{_f(length)});")
 
-        # ---- StyledItem (renk) ----
+        # ---- Renk ----
         psa_id = style_map.get(status, style_map.get("UNMATCHED"))
         styled = eid.next()
         add(f"#{styled}=IFCSTYLEDITEM(#{ext},(#{psa_id}),$);")
@@ -255,7 +223,7 @@ def write_enriched_ifc(elements: list[dict], connectivity: dict) -> bytes:
         else:
             add(f"#{el_id}=IFCBEAM('{guid}',#5,'{label}',$,'Beam',#{lp},#{prod_def},'{label}');")
 
-        # ---- Property Set ----
+        # ---- PropertySet ----
         pv1 = eid.next(); pv2 = eid.next(); pv3 = eid.next()
         pv4 = eid.next(); pv5 = eid.next()
         ps = eid.next(); rp = eid.next()

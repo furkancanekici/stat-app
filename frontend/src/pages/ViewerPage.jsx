@@ -21,14 +21,8 @@ export default function ViewerPage() {
   const [enriching, setEnriching] = useState(false);
 
   useEffect(() => {
-    // IFC yok artık, sadece excelFile kontrolü yeterli
     if (!excelFile) return;
-    // Eğer elements zaten UploadPage'den geldiyse tekrar yükleme
-    if (elements.length > 0) {
-      const storySet = [...new Set(elements.map((e) => e.ifc_story).filter(Boolean))];
-      setStories(storySet.sort());
-      return;
-    }
+    // Her zaman taze veri çek — cache kullanma
     loadData();
   }, []);
 
@@ -89,7 +83,6 @@ export default function ViewerPage() {
         gap: "12px",
         flexShrink: 0,
       }}>
-        {/* Story filtre */}
         <select
           value={activeStory}
           onChange={(e) => setActiveStory(e.target.value)}
@@ -108,7 +101,6 @@ export default function ViewerPage() {
           ))}
         </select>
 
-        {/* Status filtreler */}
         <div style={{ display: "flex", gap: "6px" }}>
           {Object.entries(STATUS_COLORS).map(([status, color]) => (
             <button
@@ -131,7 +123,6 @@ export default function ViewerPage() {
           ))}
         </div>
 
-        {/* Enrich butonu */}
         <button
           onClick={handleEnrich}
           disabled={enriching}

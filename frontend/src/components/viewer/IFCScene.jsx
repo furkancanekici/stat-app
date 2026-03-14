@@ -4,8 +4,7 @@ import { getColor } from "../../utils/colorPalette";
 import useAppStore from "../../store/useAppStore";
 
 const STORY_HEIGHT = 3.0;
-const BEAM_SECTION = 0.3;
-const COL_SECTION = 0.3;
+const DEFAULT_SECTION = 0.3;
 
 export default function IFCScene({ onElementClick }) {
   const mountRef = useRef();
@@ -38,16 +37,14 @@ export default function IFCScene({ onElementClick }) {
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Işıklar
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
     dirLight.position.set(20, 30, 20);
     scene.add(dirLight);
 
-    // Grid
     scene.add(new THREE.GridHelper(50, 50, "#1e2738", "#1e2738"));
 
-    // ---- Orbit / Pan / Zoom ----
+    // Orbit / Pan / Zoom
     let isMouseDown = false;
     let rightMouseDown = false;
     let lastMouse = { x: 0, y: 0 };
@@ -72,7 +69,6 @@ export default function IFCScene({ onElementClick }) {
       const dx = e.clientX - lastMouse.x;
       const dy = e.clientY - lastMouse.y;
       lastMouse = { x: e.clientX, y: e.clientY };
-
       if (isMouseDown) {
         sph.theta -= dx * 0.005;
         sph.phi = Math.max(0.1, Math.min(Math.PI - 0.1, sph.phi + dy * 0.005));
@@ -98,7 +94,7 @@ export default function IFCScene({ onElementClick }) {
     mount.addEventListener("wheel", onWheel);
     mount.addEventListener("contextmenu", onCtx);
 
-    // ---- Click (drag ile karışmasın) ----
+    // Click (drag ile karışmasın)
     let downPos = { x: 0, y: 0 };
     const onDown2 = (e) => { downPos = { x: e.clientX, y: e.clientY }; };
     const onUp2 = (e) => {
@@ -118,12 +114,10 @@ export default function IFCScene({ onElementClick }) {
     mount.addEventListener("mousedown", onDown2);
     mount.addEventListener("mouseup", onUp2);
 
-    // Animate
     let animId;
     const animate = () => { animId = requestAnimationFrame(animate); renderer.render(scene, camera); };
     animate();
 
-    // Resize
     const onResize = () => {
       const w = mount.clientWidth, h = mount.clientHeight;
       camera.aspect = w / h;
@@ -147,11 +141,10 @@ export default function IFCScene({ onElementClick }) {
     };
   }, []);
 
-  // ---- Elemanları çiz ----
+  // Elemanları çiz
   useEffect(() => {
     if (!sceneRef.current || elements.length === 0) return;
 
-    // Temizle
     meshesRef.current.forEach((m) => {
       sceneRef.current.remove(m);
       m.geometry.dispose();
@@ -172,6 +165,11 @@ export default function IFCScene({ onElementClick }) {
     filtered.forEach((el) => {
       const color = getColor(el.status);
       const isBeam = el.ifc_type === "IfcBeam";
+
+      // Gerçek kesit boyutları (backend'den geliyor)
+      const secDepth = el.sec_depth || DEFAULT_SECTION;
+      const secWidth = el.sec_width || DEFAULT_SECTION;
+
       const material = new THREE.MeshLambertMaterial({
         color: new THREE.Color(color),
         transparent: true,
@@ -181,23 +179,20 @@ export default function IFCScene({ onElementClick }) {
       let mesh;
 
       if (isBeam) {
-        // --- KİRİŞ ---
-        // pi/pj noktalarından gerçek uzunluk ve yön
         const pi_x = el.pi_x ?? el.x ?? 0;
         const pi_y = el.pi_y ?? el.y ?? 0;
         const pj_x = el.pj_x ?? (el.x ?? 0) + 1;
         const pj_y = el.pj_y ?? el.y ?? 0;
-        const elev = (el.z ?? 0) + STORY_HEIGHT; // kiriş kat tepesinde
+        const elev = (el.z ?? 0) + STORY_HEIGHT;
 
         const dx = pj_x - pi_x;
         const dy = pj_y - pi_y;
         const length = Math.max(Math.sqrt(dx * dx + dy * dy), 0.5);
 
-        const geo = new THREE.BoxGeometry(length, BEAM_SECTION, BEAM_SECTION);
+        // Kiriş: uzunluk X, yükseklik(depth) Y, genişlik(width) Z
+        const geo = new THREE.BoxGeometry(length, secDepth, secWidth);
         mesh = new THREE.Mesh(geo, material);
 
-        // Three.js: X=sağ, Y=yukarı, Z=derinlik
-        // Yapı:     X→X,   Y→Z,      Z(elev)→Y
         mesh.position.set(
           (pi_x + pj_x) / 2,
           elev,
@@ -209,15 +204,13 @@ export default function IFCScene({ onElementClick }) {
         minZ = Math.min(minZ, pi_y, pj_y); maxZ = Math.max(maxZ, pi_y, pj_y);
         minY = Math.min(minY, elev);        maxY = Math.max(maxY, elev);
       } else {
-        // --- KOLON ---
         const cx = el.x ?? 0;
         const cy = el.y ?? 0;
         const baseElev = el.z ?? 0;
 
-        const geo = new THREE.BoxGeometry(COL_SECTION, STORY_HEIGHT, COL_SECTION);
+        // Kolon: genişlik(width) X, yükseklik(story) Y, derinlik(depth) Z
+        const geo = new THREE.BoxGeometry(secWidth, STORY_HEIGHT, secDepth);
         mesh = new THREE.Mesh(geo, material);
-
-        // Kolon tabanından kat tepesine kadar, merkez yarı yükseklikte
         mesh.position.set(cx, baseElev + STORY_HEIGHT / 2, cy);
 
         minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);

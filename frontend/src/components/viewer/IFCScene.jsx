@@ -1,10 +1,50 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { getColor } from "../../utils/colorPalette";
 import useAppStore from "../../store/useAppStore";
 
 const STORY_HEIGHT = 3.0;
 const DEFAULT_SECTION = 0.3;
+
+// ─── Infinite Grid (shader-based) ───
+function createInfiniteGrid() {
+  const geometry = new THREE.PlaneGeometry(2, 2, 1, 1);
+  const material = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    uniforms: {
+      uColor: { value: new THREE.Color("#1e2738") },
+      uFade: { value: 150.0 },
+    },
+    transparent: true,
+    vertexShader: `
+      varying vec3 vWorldPos;
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uFade;
+      varying vec3 vWorldPos;
+      void main() {
+        vec2 coord = vWorldPos.xz;
+        vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+        float line = min(grid.x, grid.y);
+        float alpha = 1.0 - min(line, 1.0);
+        float dist = length(vWorldPos.xz);
+        alpha *= max(0.0, 1.0 - dist / uFade);
+        gl_FragColor = vec4(uColor, alpha * 0.5);
+      }
+    `,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.scale.set(10000, 10000, 1);
+  mesh.frustumCulled = false;
+  return mesh;
+}
 
 export default function IFCScene({ onElementClick }) {
   const mountRef = useRef();
@@ -15,7 +55,7 @@ export default function IFCScene({ onElementClick }) {
   const targetRef = useRef(new THREE.Vector3(5, 4.5, 5));
   const sphericalRef = useRef({ theta: Math.PI / 4, phi: Math.PI / 3, radius: 30 });
 
-  const { elements, statusFilter, activeStory } = useAppStore();
+  const { elements, statusFilter, activeStory, bgColor, statusColors } = useAppStore();
   const [loading, setLoading] = useState(false);
 
   // Sahne kurulumu (bir kez)
@@ -25,10 +65,10 @@ export default function IFCScene({ onElementClick }) {
     const height = mount.clientHeight;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#080b10");
+    scene.background = new THREE.Color(bgColor);
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 5000);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -42,7 +82,8 @@ export default function IFCScene({ onElementClick }) {
     dirLight.position.set(20, 30, 20);
     scene.add(dirLight);
 
-    scene.add(new THREE.GridHelper(50, 50, "#1e2738", "#1e2738"));
+    // Sonsuz grid
+    scene.add(createInfiniteGrid());
 
     // Orbit / Pan / Zoom
     let isMouseDown = false;
@@ -83,7 +124,7 @@ export default function IFCScene({ onElementClick }) {
       }
     };
     const onWheel = (e) => {
-      sph.radius = Math.max(3, Math.min(150, sph.radius + e.deltaY * 0.05));
+      sph.radius = Math.max(3, Math.min(500, sph.radius + e.deltaY * 0.05));
       updateCamera();
     };
     const onCtx = (e) => e.preventDefault();
@@ -141,6 +182,13 @@ export default function IFCScene({ onElementClick }) {
     };
   }, []);
 
+  // Arka plan rengi değiştiğinde güncelle
+  useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.background = new THREE.Color(bgColor);
+    }
+  }, [bgColor]);
+
   // Elemanları çiz
   useEffect(() => {
     if (!sceneRef.current || elements.length === 0) return;
@@ -163,10 +211,10 @@ export default function IFCScene({ onElementClick }) {
     let minZ = Infinity, maxZ = -Infinity;
 
     filtered.forEach((el) => {
-      const color = getColor(el.status);
+      // Store'daki özelleştirilmiş rengi kullan
+      const color = statusColors[el.status] || statusColors.UNMATCHED || "#64748b";
       const isBeam = el.ifc_type === "IfcBeam";
 
-      // Gerçek kesit boyutları (backend'den geliyor)
       const secDepth = el.sec_depth || DEFAULT_SECTION;
       const secWidth = el.sec_width || DEFAULT_SECTION;
 
@@ -189,7 +237,6 @@ export default function IFCScene({ onElementClick }) {
         const dy = pj_y - pi_y;
         const length = Math.max(Math.sqrt(dx * dx + dy * dy), 0.5);
 
-        // Kiriş: uzunluk X, yükseklik(depth) Y, genişlik(width) Z
         const geo = new THREE.BoxGeometry(length, secDepth, secWidth);
         mesh = new THREE.Mesh(geo, material);
 
@@ -208,7 +255,6 @@ export default function IFCScene({ onElementClick }) {
         const cy = el.y ?? 0;
         const baseElev = el.z ?? 0;
 
-        // Kolon: genişlik(width) X, yükseklik(story) Y, derinlik(depth) Z
         const geo = new THREE.BoxGeometry(secWidth, STORY_HEIGHT, secDepth);
         mesh = new THREE.Mesh(geo, material);
         mesh.position.set(cx, baseElev + STORY_HEIGHT / 2, cy);
@@ -223,7 +269,6 @@ export default function IFCScene({ onElementClick }) {
       meshesRef.current.push(mesh);
     });
 
-    // Kamerayı modelin merkezine oturt
     if (filtered.length > 0 && isFinite(minX)) {
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
@@ -244,7 +289,7 @@ export default function IFCScene({ onElementClick }) {
         cam.lookAt(targetRef.current);
       }
     }
-  }, [elements, statusFilter, activeStory]);
+  }, [elements, statusFilter, activeStory, statusColors]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

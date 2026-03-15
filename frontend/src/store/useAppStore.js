@@ -1,5 +1,13 @@
 import { create } from "zustand";
 
+const DEFAULT_STATUS_COLORS = {
+  OK:        "#22c55e",
+  WARNING:   "#eab308",
+  FAIL:      "#ef4444",
+  BRITTLE:   "#f97316",
+  UNMATCHED: "#64748b",
+};
+
 const useAppStore = create((set) => ({
   // Dosyalar
   ifcFile: null,
@@ -16,6 +24,10 @@ const useAppStore = create((set) => ({
   activeStory: "ALL",
   statusFilter: ["OK", "WARNING", "FAIL", "BRITTLE", "UNMATCHED"],
 
+  // Görünüm
+  bgColor: "#080b10",
+  statusColors: { ...DEFAULT_STATUS_COLORS },
+
   // UI
   step: 1,
   loading: false,
@@ -26,7 +38,7 @@ const useAppStore = create((set) => ({
   setFiles: (ifcFile, excelFile) => set({
     ifcFile,
     excelFile,
-    step: excelFile ? 3 : 1,   // Excel yüklendi → viewer açılabilir
+    step: excelFile ? 3 : 1,
   }),
   setIfcVersion: (ifcVersion) => set({ ifcVersion }),
   setMatchResult: (matchResult) => set({ matchResult }),
@@ -39,6 +51,11 @@ const useAppStore = create((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setEnrichedIFC: (enrichedIFC) => set({ enrichedIFC }),
+  setBgColor: (bgColor) => set({ bgColor }),
+  setStatusColor: (status, color) => set((state) => ({
+    statusColors: { ...state.statusColors, [status]: color },
+  })),
+  resetStatusColors: () => set({ statusColors: { ...DEFAULT_STATUS_COLORS } }),
 
   reset: () => set({
     ifcFile: null,
@@ -50,6 +67,8 @@ const useAppStore = create((set) => ({
     selectedElement: null,
     activeStory: "ALL",
     statusFilter: ["OK", "WARNING", "FAIL", "BRITTLE", "UNMATCHED"],
+    bgColor: "#080b10",
+    statusColors: { ...DEFAULT_STATUS_COLORS },
     step: 1,
     loading: false,
     error: null,

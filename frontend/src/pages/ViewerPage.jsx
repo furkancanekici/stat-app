@@ -4,7 +4,7 @@ import useAppStore from "../store/useAppStore";
 import IFCScene from "../components/viewer/IFCScene";
 import DetailPanel from "../components/viewer/DetailPanel";
 import { getSummary, enrichIFC } from "../services/api";
-import { STATUS_COLORS, STATUS_LABELS } from "../utils/colorPalette";
+import { STATUS_LABELS } from "../utils/colorPalette";
 
 export default function ViewerPage() {
   const navigate = useNavigate();
@@ -15,14 +15,16 @@ export default function ViewerPage() {
     statusFilter, setStatusFilter,
     setSummary, setEnrichedIFC,
     loading, setLoading, setError,
+    bgColor, setBgColor,
+    statusColors, setStatusColor, resetStatusColors,
   } = useAppStore();
 
   const [stories, setStories] = useState([]);
   const [enriching, setEnriching] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     if (!excelFile) return;
-    // Her zaman taze veri çek — cache kullanma
     loadData();
   }, []);
 
@@ -83,6 +85,7 @@ export default function ViewerPage() {
         gap: "12px",
         flexShrink: 0,
       }}>
+        {/* Story filtre */}
         <select
           value={activeStory}
           onChange={(e) => setActiveStory(e.target.value)}
@@ -101,8 +104,9 @@ export default function ViewerPage() {
           ))}
         </select>
 
+        {/* Status filtreler — store'daki renklerle */}
         <div style={{ display: "flex", gap: "6px" }}>
-          {Object.entries(STATUS_COLORS).map(([status, color]) => (
+          {Object.entries(statusColors).map(([status, color]) => (
             <button
               key={status}
               onClick={() => toggleStatus(status)}
@@ -118,11 +122,29 @@ export default function ViewerPage() {
                 letterSpacing: "1px",
               }}
             >
-              {STATUS_LABELS[status]}
+              {STATUS_LABELS[status] || status}
             </button>
           ))}
         </div>
 
+        {/* Ayarlar butonu */}
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          style={{
+            padding: "5px 12px",
+            background: showSettings ? "#1e2738" : "transparent",
+            border: "1px solid #2a3650",
+            borderRadius: "6px",
+            color: "#7090b8",
+            fontSize: "14px",
+            cursor: "pointer",
+          }}
+          title="Görünüm Ayarları"
+        >
+          ⚙
+        </button>
+
+        {/* Enrich butonu */}
         <button
           onClick={handleEnrich}
           disabled={enriching}
@@ -146,11 +168,119 @@ export default function ViewerPage() {
       {/* 3D Sahne */}
       <div style={{ flex: 1, position: "relative" }}>
         <IFCScene onElementClick={setSelectedElement} />
+
         {selectedEl && (
           <DetailPanel
             element={selectedEl}
             onClose={() => setSelectedElement(null)}
           />
+        )}
+
+        {/* Ayarlar Paneli */}
+        {showSettings && (
+          <div style={{
+            position: "absolute",
+            top: "12px",
+            left: "12px",
+            width: "240px",
+            background: "#0c1018ee",
+            border: "1px solid #1e2738",
+            borderRadius: "10px",
+            zIndex: 100,
+            overflow: "hidden",
+          }}>
+            {/* Panel Başlık */}
+            <div style={{
+              padding: "10px 14px",
+              borderBottom: "1px solid #1e2738",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}>
+              <span style={{ fontSize: "12px", fontWeight: "700", color: "#5b9cf6", letterSpacing: "1px" }}>
+                GÖRÜNÜM
+              </span>
+              <button
+                onClick={() => setShowSettings(false)}
+                style={{ background: "none", border: "none", color: "#4a5c7a", fontSize: "16px", cursor: "pointer" }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ padding: "12px 14px" }}>
+              {/* Arka plan rengi */}
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ fontSize: "10px", color: "#4a5c7a", letterSpacing: "1px", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                  Arka Plan
+                </label>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {["#080b10", "#0d1117", "#1a1a2e", "#16213e", "#1b1b1b", "#ffffff", "#f0f0f0", "#2d3436"].map((c) => (
+                    <div
+                      key={c}
+                      onClick={() => setBgColor(c)}
+                      style={{
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "4px",
+                        background: c,
+                        border: bgColor === c ? "2px solid #5b9cf6" : "1px solid #2a3650",
+                        cursor: "pointer",
+                      }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={bgColor}
+                    onChange={(e) => setBgColor(e.target.value)}
+                    style={{ width: "26px", height: "26px", border: "none", padding: 0, cursor: "pointer", borderRadius: "4px" }}
+                    title="Özel renk"
+                  />
+                </div>
+              </div>
+
+              {/* Status renkleri */}
+              <div style={{ marginBottom: "10px" }}>
+                <label style={{ fontSize: "10px", color: "#4a5c7a", letterSpacing: "1px", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                  Durum Renkleri
+                </label>
+                {Object.entries(statusColors).map(([status, color]) => (
+                  <div key={status} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => setStatusColor(status, e.target.value)}
+                      style={{ width: "22px", height: "22px", border: "none", padding: 0, cursor: "pointer", borderRadius: "3px" }}
+                    />
+                    <span style={{ fontSize: "11px", color: "#d8e4f8", flex: 1 }}>
+                      {STATUS_LABELS[status] || status}
+                    </span>
+                    <span style={{ fontSize: "9px", color: "#4a5c7a", fontFamily: "monospace" }}>
+                      {color}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Sıfırla butonu */}
+              <button
+                onClick={resetStatusColors}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "transparent",
+                  border: "1px solid #2a3650",
+                  borderRadius: "5px",
+                  color: "#4a5c7a",
+                  fontSize: "10px",
+                  cursor: "pointer",
+                  letterSpacing: "1px",
+                }}
+              >
+                Renkleri Sıfırla
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

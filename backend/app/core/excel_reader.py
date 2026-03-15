@@ -11,10 +11,17 @@ def _find_header_row(df_raw, markers):
     return None
 
 
+def _safe_float(val):
+    try:
+        if val is None or str(val).strip() in ("", "nan"):
+            return None
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
 def _read_steel(file_bytes: bytes) -> list[dict]:
-    """Çelik kiriş/kolon: Stl Frm Sum - AISC 360-16
-    UC = PMM Ratio (direkt). UC ≥ 1.0 → yetersiz.
-    """
+    """Çelik kiriş/kolon: Stl Frm Sum - AISC 360-16"""
     xl = pd.ExcelFile(BytesIO(file_bytes))
     sheet = next((s for s in xl.sheet_names if "Stl Frm Sum" in s or "Steel Frame" in s), None)
     if not sheet:
@@ -35,21 +42,8 @@ def _read_steel(file_bytes: bytes) -> list[dict]:
         if not label:
             continue
 
-        unity_check = None
-        try:
-            uc = row.get("PMM Ratio")
-            if uc is not None and str(uc).strip() not in ("", "nan"):
-                unity_check = float(uc)
-        except (ValueError, TypeError):
-            pass
-
-        v_ratio = None
-        try:
-            vr = row.get("V Major Ratio")
-            if vr is not None and str(vr).strip() not in ("", "nan"):
-                v_ratio = float(vr)
-        except (ValueError, TypeError):
-            pass
+        unity_check = _safe_float(row.get("PMM Ratio"))
+        v_ratio = _safe_float(row.get("V Major Ratio"))
 
         failure_mode = ""
         if v_ratio is not None and unity_check is not None:
@@ -66,15 +60,19 @@ def _read_steel(file_bytes: bytes) -> list[dict]:
             "unity_check":     unity_check,
             "failure_mode":    failure_mode,
             "governing_combo": str(row.get("PMM Combo", "") or ""),
+            # Çelik profillerde donatı yok
+            "as_total":        None,
+            "as_min":          None,
+            "as_top":          None,
+            "as_bot":          None,
+            "v_rebar":         None,
+            "rebar_ratio":     None,
         })
     return rows
 
 
 def _read_concrete_col(file_bytes: bytes) -> list[dict]:
-    """Beton kolon: Conc Col Sum - TS 500-2000
-    As/AsMin > 1.0 → donatı yeterli (iyi).
-    UC olarak AsMin/As kullanılır → UC < 1.0 = yeterli, UC ≥ 1.0 = yetersiz.
-    """
+    """Beton kolon: Conc Col Sum - TS 500-2000"""
     xl = pd.ExcelFile(BytesIO(file_bytes))
     sheet = next((s for s in xl.sheet_names if "Conc Col" in s), None)
     if not sheet:
@@ -96,15 +94,20 @@ def _read_concrete_col(file_bytes: bytes) -> list[dict]:
         if not label:
             continue
 
-        # UC = AsMin / As  →  küçükse yeterli, ≥1.0 ise yetersiz
+        as_val = _safe_float(row.get("As"))
+        as_min = _safe_float(row.get("AsMin"))
+        v_maj = _safe_float(row.get("VMajRebar"))
+        v_min = _safe_float(row.get("VMinRebar"))
+
+        # UC = AsMin / As → küçükse yeterli
         unity_check = None
-        try:
-            as_val = float(row.get("As") or 0)
-            as_min = float(row.get("AsMin") or 0)
-            if as_val > 0:
-                unity_check = round(as_min / as_val, 3)
-        except (ValueError, TypeError):
-            pass
+        if as_val and as_val > 0:
+            unity_check = round((as_min or 0) / as_val, 3)
+
+        # Donatı oranı (yaklaşık) — As / AsMin
+        rebar_ratio = None
+        if as_min and as_min > 0 and as_val:
+            rebar_ratio = round(as_val / as_min, 2)
 
         status_raw = str(row.get("Status", "") or "")
         failure_mode = "Overstressed" if "Overstressed" in status_raw else "PMM"
@@ -116,15 +119,18 @@ def _read_concrete_col(file_bytes: bytes) -> list[dict]:
             "unity_check":     unity_check,
             "failure_mode":    failure_mode,
             "governing_combo": str(row.get("PMMCombo", "") or ""),
+            "as_total":        as_val,
+            "as_min":          as_min,
+            "as_top":          None,
+            "as_bot":          None,
+            "v_rebar":         max(v_maj or 0, v_min or 0) if (v_maj or v_min) else None,
+            "rebar_ratio":     rebar_ratio,
         })
     return rows
 
 
 def _read_concrete_beam(file_bytes: bytes) -> list[dict]:
-    """Beton kiriş: Conc Bm Sum - TS 500-2000
-    AsTop ≥ AsMinTop → donatı yeterli.
-    UC = max(AsMinTop/AsTop, AsMinBot/AsBot) → küçükse yeterli, ≥1.0 ise yetersiz.
-    """
+    """Beton kiriş: Conc Bm Sum - TS 500-2000"""
     xl = pd.ExcelFile(BytesIO(file_bytes))
     sheet = next((s for s in xl.sheet_names if "Conc Bm" in s or "Concrete Beam" in s), None)
     if not sheet:
@@ -146,46 +152,39 @@ def _read_concrete_beam(file_bytes: bytes) -> list[dict]:
         if not label:
             continue
 
+        as_top = _safe_float(row.get("AsTop"))
+        as_min_top = _safe_float(row.get("AsMinTop"))
+        as_bot = _safe_float(row.get("AsBot"))
+        as_min_bot = _safe_float(row.get("AsMinBot"))
+        v_rebar = _safe_float(row.get("VRebar"))
+
+        # UC = max(AsMin/As) → küçükse yeterli
         unity_check = None
         failure_mode = ""
-        try:
-            as_top = float(row.get("AsTop") or 0)
-            as_min_top = float(row.get("AsMinTop") or 0)
-            as_bot = float(row.get("AsBot") or 0)
-            as_min_bot = float(row.get("AsMinBot") or 0)
+        ratios = []
+        if as_top and as_top > 0:
+            ratios.append((as_min_top or 0) / as_top)
+        if as_bot and as_bot > 0:
+            ratios.append((as_min_bot or 0) / as_bot)
+        if ratios:
+            unity_check = round(max(ratios), 3)
+            failure_mode = "Moment"
 
-            # UC = AsMin/As → küçükse yeterli, ≥1.0 ise yetersiz
-            ratios = []
-            if as_top > 0:
-                ratios.append(as_min_top / as_top)
-            if as_bot > 0:
-                ratios.append(as_min_bot / as_bot)
+        if v_rebar and v_rebar > 0 and unity_check is not None and unity_check >= 1.0:
+            failure_mode = "Shear"
 
-            if ratios:
-                unity_check = round(max(ratios), 3)
-                failure_mode = "Moment"
-        except (ValueError, TypeError):
-            pass
-
-        # Kesme kontrolü
-        try:
-            v_rebar = row.get("VRebar")
-            if v_rebar is not None and str(v_rebar).strip() not in ("", "nan"):
-                v_val = float(v_rebar)
-                if v_val > 0 and unity_check is not None and unity_check >= 1.0:
-                    failure_mode = "Shear"
-        except (ValueError, TypeError):
-            pass
+        # Donatı oranı — toplam As / toplam AsMin
+        total_as = (as_top or 0) + (as_bot or 0)
+        total_as_min = (as_min_top or 0) + (as_min_bot or 0)
+        rebar_ratio = None
+        if total_as_min > 0:
+            rebar_ratio = round(total_as / total_as_min, 2)
 
         status_raw = str(row.get("Status", "") or "")
         if "Overstressed" in status_raw:
             failure_mode = failure_mode or "Overstressed"
 
-        combo = ""
-        try:
-            combo = str(row.get("AsTopCombo", "") or "")
-        except Exception:
-            pass
+        combo = str(row.get("AsTopCombo", "") or "")
 
         rows.append({
             "excel_label":     label,
@@ -194,6 +193,12 @@ def _read_concrete_beam(file_bytes: bytes) -> list[dict]:
             "unity_check":     unity_check,
             "failure_mode":    failure_mode,
             "governing_combo": combo,
+            "as_total":        total_as if total_as > 0 else None,
+            "as_min":          total_as_min if total_as_min > 0 else None,
+            "as_top":          as_top,
+            "as_bot":          as_bot,
+            "v_rebar":         v_rebar,
+            "rebar_ratio":     rebar_ratio,
         })
     return rows
 

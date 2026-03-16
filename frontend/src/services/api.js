@@ -31,3 +31,11 @@ export async function getSummary(ifcFile, excelFile) {
   const res = await api.post("/summary", form);
   return res.data;
 }
+
+export async function compareRevisions(oldFile, newFile) {
+  const form = new FormData();
+  form.append("old_file", oldFile);
+  form.append("new_file", newFile);
+  const res = await api.post("/compare", form);
+  return res.data;
+}

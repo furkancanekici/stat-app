@@ -30,47 +30,25 @@ export default function DetailPanel({ element, onClose }) {
     : element.ifc_type === "IfcColumn" ? "Kolon" : element.ifc_type;
 
   const failureModeMap = {
-    "Moment": "Eğilme (Sünek)",
-    "Shear": "Kesme (Gevrek)",
-    "PMM": "Eksenel + Eğilme",
-    "Overstressed": "Aşırı Gerilme",
+    "Moment": "Eğilme (Sünek)", "Shear": "Kesme (Gevrek)",
+    "PMM": "Eksenel + Eğilme", "Overstressed": "Aşırı Gerilme",
   };
   const failureModeLabel = failureModeMap[element.failure_mode] || element.failure_mode || "-";
 
   const isBeam = element.ifc_type === "IfcBeam";
   const isColumn = element.ifc_type === "IfcColumn";
-
-  // Donatı değerleri
-  const asTotal = element.as_total;
-  const asMin = element.as_min;
-  const asTop = element.as_top;
-  const asBot = element.as_bot;
-  const vRebar = element.v_rebar;
-  const rebarRatio = element.rebar_ratio;
-
-  const hasRebar = asTotal != null || asTop != null || asBot != null;
+  const hasRebar = element.as_total != null || element.as_top != null || element.as_bot != null;
+  const warnings = element.warnings || [];
 
   return (
     <div style={{
-      position: "absolute",
-      top: "12px",
-      right: "12px",
-      width: "300px",
-      background: "#0c1018ee",
-      border: "1px solid #1e2738",
-      borderRadius: "12px",
-      zIndex: 100,
-      overflow: "hidden",
-      backdropFilter: "blur(8px)",
-      maxHeight: "calc(100vh - 140px)",
-      overflowY: "auto",
+      position: "absolute", top: "12px", right: "12px", width: "300px",
+      background: "#0c1018ee", border: "1px solid #1e2738", borderRadius: "12px",
+      zIndex: 100, overflow: "hidden", backdropFilter: "blur(8px)",
+      maxHeight: "calc(100vh - 140px)", overflowY: "auto",
     }}>
-      {/* ─── Header ─── */}
-      <div style={{
-        padding: "14px 16px",
-        borderBottom: `2px solid ${statusColor}44`,
-        background: `${statusColor}08`,
-      }}>
+      {/* Header */}
+      <div style={{ padding: "14px 16px", borderBottom: `2px solid ${statusColor}44`, background: `${statusColor}08` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: "16px", fontWeight: "800", color: "#fff", marginBottom: "2px" }}>
@@ -81,185 +59,174 @@ export default function DetailPanel({ element, onClose }) {
             </div>
             <StatusBadge status={element.status} />
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: "transparent", border: "none", color: "#4a5c7a", fontSize: "20px", cursor: "pointer", padding: "0 2px", lineHeight: "1" }}
-          >
-            ×
-          </button>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#4a5c7a", fontSize: "20px", cursor: "pointer" }}>×</button>
         </div>
       </div>
 
-      {/* ─── Kapasite Göstergesi ─── */}
+      {/* Kapasite */}
       {capacityPct != null && (
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #1e273840" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
-            <span style={sectionLabelStyle}>Kapasite Kullanımı</span>
-            <span style={{
-              fontSize: "20px", fontWeight: "800", fontFamily: "monospace",
-              color: getBarColor(capacityPct),
-            }}>
-              %{capacityPct}
-            </span>
+            <span style={labelStyle}>Kapasite Kullanımı</span>
+            <span style={{ fontSize: "20px", fontWeight: "800", fontFamily: "monospace", color: getBarColor(capacityPct) }}>%{capacityPct}</span>
           </div>
           <div style={{ width: "100%", height: "8px", background: "#111620", borderRadius: "4px", overflow: "hidden" }}>
-            <div style={{
-              width: `${Math.min(capacityPct, 100)}%`,
-              height: "100%",
-              background: getBarColor(capacityPct),
-              borderRadius: "4px",
-              transition: "width 0.3s ease",
-            }} />
+            <div style={{ width: `${Math.min(capacityPct, 100)}%`, height: "100%", background: getBarColor(capacityPct), borderRadius: "4px", transition: "width 0.3s" }} />
           </div>
-          {capacityPct >= 100 && (
-            <div style={{ fontSize: "9px", color: "#ef4444", marginTop: "4px", fontWeight: "600" }}>
-              ⚠ Kapasite aşımı — %{capacityPct - 100} fazla
-            </div>
-          )}
+          {capacityPct >= 100 && <div style={{ fontSize: "9px", color: "#ef4444", marginTop: "4px", fontWeight: "600" }}>⚠ Kapasite aşımı — %{capacityPct - 100} fazla</div>}
         </div>
       )}
 
-      {/* ─── Kesit Özellikleri ─── */}
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #1e273840" }}>
-        <div style={sectionTitleStyle}>KESİT ÖZELLİKLERİ</div>
+      {/* Kesit */}
+      <Section title="KESİT ÖZELLİKLERİ">
         <Row label="Kesit Adı" value={element.excel_section || "-"} />
         <Row label="Boyut" value={sectionDisplay} />
         <Row label="Kesit Alanı" value={sectionArea} />
-        {secDepth != null && <Row label="Derinlik (h)" value={`${(secDepth * 100).toFixed(1)} cm`} />}
-        {secWidth != null && <Row label="Genişlik (b)" value={`${(secWidth * 100).toFixed(1)} cm`} />}
-      </div>
+      </Section>
 
-      {/* ─── Donatı Bilgileri ─── */}
+      {/* Donatı */}
       {hasRebar && (
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid #1e273840" }}>
-          <div style={sectionTitleStyle}>DONATI BİLGİLERİ</div>
-
-          {/* Kolon donatısı */}
-          {isColumn && asTotal != null && (
+        <Section title="DONATI BİLGİLERİ">
+          {isColumn && element.as_total != null && (
             <>
-              <Row label="Mevcut Donatı (As)" value={`${asTotal.toFixed(0)} mm²`} />
-              {asMin != null && <Row label="Minimum Donatı (As,min)" value={`${asMin.toFixed(0)} mm²`} />}
-              {rebarRatio != null && (
-                <Row
-                  label="Donatı Oranı (As/As,min)"
-                  value={`${rebarRatio.toFixed(2)}x`}
-                  highlight={rebarRatio < 1.0}
-                  good={rebarRatio >= 1.5}
-                />
-              )}
+              <Row label="Mevcut Donatı (As)" value={`${element.as_total.toFixed(0)} mm²`} />
+              {element.as_min != null && <Row label="Min. Donatı (As,min)" value={`${element.as_min.toFixed(0)} mm²`} />}
+              {element.rebar_ratio != null && <Row label="Donatı Oranı" value={`${element.rebar_ratio.toFixed(2)}x`} highlight={element.rebar_ratio < 1.0} good={element.rebar_ratio >= 1.5} />}
             </>
           )}
-
-          {/* Kiriş donatısı */}
           {isBeam && (
             <>
-              {asTop != null && <Row label="Üst Donatı (As,üst)" value={`${asTop.toFixed(0)} mm²`} />}
-              {asBot != null && <Row label="Alt Donatı (As,alt)" value={`${asBot.toFixed(0)} mm²`} />}
-              {asTotal != null && <Row label="Toplam Donatı" value={`${asTotal.toFixed(0)} mm²`} />}
-              {asMin != null && <Row label="Minimum Donatı" value={`${asMin.toFixed(0)} mm²`} />}
-              {rebarRatio != null && (
-                <Row
-                  label="Donatı Oranı (As/As,min)"
-                  value={`${rebarRatio.toFixed(2)}x`}
-                  highlight={rebarRatio < 1.0}
-                  good={rebarRatio >= 1.5}
-                />
-              )}
+              {element.as_top != null && <Row label="Üst Donatı (As,üst)" value={`${element.as_top.toFixed(0)} mm²`} />}
+              {element.as_bot != null && <Row label="Alt Donatı (As,alt)" value={`${element.as_bot.toFixed(0)} mm²`} />}
+              {element.rebar_ratio != null && <Row label="Donatı Oranı" value={`${element.rebar_ratio.toFixed(2)}x`} highlight={element.rebar_ratio < 1.0} good={element.rebar_ratio >= 1.5} />}
             </>
           )}
+          {element.v_rebar != null && <Row label="Kesme Donatısı" value={`${element.v_rebar.toFixed(1)} mm²/m`} />}
 
-          {/* Kesme donatısı */}
-          {vRebar != null && (
-            <Row label="Kesme Donatısı" value={`${vRebar.toFixed(1)} mm²/m`} />
-          )}
-
-          {/* Donatı yeterlilik göstergesi */}
-          {rebarRatio != null && (
-            <div style={{
-              marginTop: "6px",
-              padding: "4px 8px",
-              borderRadius: "4px",
-              fontSize: "10px",
-              fontWeight: "600",
-              background: rebarRatio >= 1.0 ? "#22c55e15" : "#ef444415",
-              color: rebarRatio >= 1.0 ? "#22c55e" : "#ef4444",
-              border: `1px solid ${rebarRatio >= 1.0 ? "#22c55e33" : "#ef444433"}`,
-            }}>
-              {rebarRatio >= 1.5
-                ? "✓ Donatı yeterli — güvenli bölge"
-                : rebarRatio >= 1.0
-                ? "✓ Donatı yeterli — minimum sınırda"
-                : "✗ Donatı yetersiz — minimum altında"}
+          {/* ρ kontrolü */}
+          {element.rho != null && (
+            <div style={{ marginTop: "6px", padding: "6px 8px", background: "#111620", borderRadius: "5px", fontSize: "10px", fontFamily: "monospace" }}>
+              <div style={{ color: "#7090b8", marginBottom: "2px" }}>TS 500 Donatı Oranı Kontrolü</div>
+              <div style={{ color: "#d8e4f8" }}>
+                ρ = {(element.rho * 100).toFixed(2)}%
+                <span style={{ color: "#4a5c7a" }}> &nbsp;(min: {(element.rho_min * 100).toFixed(2)}% — max: {(element.rho_max * 100).toFixed(2)}%)</span>
+              </div>
+              <div style={{
+                marginTop: "4px",
+                color: element.rho_status === "OK" ? "#22c55e" : "#ef4444",
+                fontWeight: "600",
+              }}>
+                {element.rho_status === "OK" ? "✓ Donatı oranı yeterli" :
+                 element.rho_status === "MIN_FAIL" ? "✗ Minimum donatı oranı altında" :
+                 "✗ Maksimum donatı oranı aşıldı"}
+              </div>
             </div>
           )}
-        </div>
+        </Section>
       )}
 
-      {/* ─── Analiz Sonuçları ─── */}
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #1e273840" }}>
-        <div style={sectionTitleStyle}>ANALİZ SONUÇLARI</div>
+      {/* Birleşim Bölgesi (sadece kolonlar) */}
+      {isColumn && element.bc_ratio_maj != null && (
+        <Section title="BİRLEŞİM BÖLGESİ (TBDY 7.3)">
+          <Row label="BC Ratio (Majör)" value={element.bc_ratio_maj?.toFixed(3) ?? "-"}
+            highlight={element.bc_status === "FAIL"} good={element.bc_status === "OK"} />
+          <Row label="BC Ratio (Minör)" value={element.bc_ratio_min?.toFixed(3) ?? "-"} />
+          <Row label="JS Ratio (Majör)" value={element.js_ratio_maj?.toFixed(3) ?? "-"}
+            highlight={element.js_status === "FAIL"} />
+          <Row label="JS Ratio (Minör)" value={element.js_ratio_min?.toFixed(3) ?? "-"} />
+
+          <StatusTag
+            status={element.bc_status}
+            okText="✓ Güçlü kolon — zayıf kiriş sağlanıyor"
+            warnText="◐ Sınırda — BCRatio > 0.833"
+            failText="✗ Zayıf kolon — TBDY 7.3.3 ihlali"
+          />
+          {element.js_status === "FAIL" && (
+            <StatusTag status="FAIL" failText="✗ Birleşim kesme kapasitesi aşıldı" />
+          )}
+        </Section>
+      )}
+
+      {/* Analiz Sonuçları */}
+      <Section title="ANALİZ SONUÇLARI">
         <Row label="Unity Check (D/C)" value={uc != null ? uc.toFixed(3) : "-"} highlight={uc != null && uc >= 1.0} />
         <Row label="Göçme Modu" value={failureModeLabel} />
         <Row label="Yük Kombinasyonu" value={element.governing_combo || "-"} />
-        <Row label="Eşleşme Skoru" value={element.match_score?.toFixed(2) ?? "-"} />
-      </div>
+      </Section>
 
-      {/* ─── Konum ─── */}
-      <div style={{ padding: "10px 16px" }}>
-        <div style={sectionTitleStyle}>KONUM</div>
+      {/* Uyarılar */}
+      {warnings.length > 0 && (
+        <Section title={`UYARILAR (${warnings.length})`}>
+          {warnings.map((w, i) => (
+            <div key={i} style={{
+              fontSize: "10px", color: "#f0c040", background: "#f0c04010",
+              border: "1px solid #f0c04033", borderRadius: "4px",
+              padding: "5px 8px", marginBottom: "4px", lineHeight: "1.4",
+            }}>
+              ⚠ {w}
+            </div>
+          ))}
+        </Section>
+      )}
+
+      {/* Konum */}
+      <Section title="KONUM" last>
         <Row label="Kat" value={element.ifc_story || "-"} />
         <Row label="X" value={element.x != null ? `${element.x.toFixed(2)} m` : "-"} />
         <Row label="Y" value={element.y != null ? `${element.y.toFixed(2)} m` : "-"} />
         <Row label="Z" value={element.z != null ? `${element.z.toFixed(2)} m` : "-"} />
-      </div>
+      </Section>
     </div>
   );
 }
 
-// ─── Stiller ───
-const sectionTitleStyle = {
-  fontSize: "10px",
-  fontWeight: "700",
-  color: "#5b9cf6",
-  letterSpacing: "1.5px",
-  textTransform: "uppercase",
-  marginBottom: "6px",
-  fontFamily: "monospace",
-};
+// ─── Yardımcılar ───
 
-const sectionLabelStyle = {
-  fontSize: "10px",
-  color: "#4a5c7a",
-  letterSpacing: "1px",
-  textTransform: "uppercase",
-};
+const labelStyle = { fontSize: "10px", color: "#4a5c7a", letterSpacing: "1px", textTransform: "uppercase" };
+
+function Section({ title, children, last }) {
+  return (
+    <div style={{ padding: "10px 16px", borderBottom: last ? "none" : "1px solid #1e273840" }}>
+      <div style={{
+        fontSize: "10px", fontWeight: "700", color: "#5b9cf6",
+        letterSpacing: "1.5px", textTransform: "uppercase",
+        marginBottom: "6px", fontFamily: "monospace",
+      }}>{title}</div>
+      {children}
+    </div>
+  );
+}
 
 function Row({ label, value, highlight, good }) {
   let color = "#d8e4f8";
   if (highlight) color = "#ef4444";
   else if (good) color = "#22c55e";
-
   return (
-    <div style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "4px 0",
-    }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
       <span style={{ fontSize: "11px", color: "#4a5c7a" }}>{label}</span>
       <span style={{
-        fontSize: "11px",
-        color: color,
-        fontFamily: "monospace",
+        fontSize: "11px", color, fontFamily: "monospace",
         fontWeight: (highlight || good) ? "700" : "400",
-        maxWidth: "170px",
-        textAlign: "right",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}>
-        {value}
-      </span>
+        maxWidth: "170px", textAlign: "right",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>{value}</span>
     </div>
+  );
+}
+
+function StatusTag({ status, okText, warnText, failText }) {
+  if (!status) return null;
+  const isOk = status === "OK";
+  const isFail = status === "FAIL";
+  const text = isFail ? failText : isOk ? okText : (warnText || "");
+  if (!text) return null;
+  return (
+    <div style={{
+      marginTop: "4px", padding: "4px 8px", borderRadius: "4px",
+      fontSize: "10px", fontWeight: "600",
+      background: isFail ? "#ef444415" : isOk ? "#22c55e15" : "#eab30815",
+      color: isFail ? "#ef4444" : isOk ? "#22c55e" : "#eab308",
+      border: `1px solid ${isFail ? "#ef444433" : isOk ? "#22c55e33" : "#eab30833"}`,
+    }}>{text}</div>
   );
 }

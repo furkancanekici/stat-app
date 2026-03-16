@@ -3,6 +3,7 @@ from fastapi.responses import Response
 from app.core.excel_reader import read_excel
 from app.core.connectivity_reader import read_connectivity
 from app.core.section_reader import read_sections
+from app.core.joint_reader import read_joints
 from app.core.element_matcher import match_elements
 from app.core.rule_engine import apply_rules
 from app.core.ifc_writer import write_enriched_ifc
@@ -30,9 +31,10 @@ async def enrich_model(excel_file: UploadFile = File(...)):
 
     connectivity = read_connectivity(excel_bytes)
     section_map = read_sections(excel_bytes)
+    joint_map = read_joints(excel_bytes)
     ifc_elements = _build_ifc_elements_from_connectivity(connectivity, excel_rows, section_map)
     matched = match_elements(ifc_elements, excel_rows)
-    enriched = apply_rules(matched)
+    enriched = apply_rules(matched, joint_map)
     ifc_bytes = write_enriched_ifc(enriched, connectivity, section_map)
 
     return Response(
@@ -51,15 +53,16 @@ async def get_summary(excel_file: UploadFile = File(...)):
 
     connectivity = read_connectivity(excel_bytes)
     section_map = read_sections(excel_bytes)
-    print(f"[DEBUG] section_map keys: {len(section_map)}, first 3: {list(section_map.keys())[:3]}")
+    joint_map = read_joints(excel_bytes)
     ifc_elements = _build_ifc_elements_from_connectivity(connectivity, excel_rows, section_map)
     matched = match_elements(ifc_elements, excel_rows)
-    enriched = apply_rules(matched)
+    enriched = apply_rules(matched, joint_map)
 
     from collections import defaultdict
     status_counts = defaultdict(int)
     by_story_map = defaultdict(lambda: defaultdict(int))
     unmatched = []
+    total_warnings = 0
 
     for el in enriched:
         status = el.get("status", "UNMATCHED")
@@ -72,6 +75,7 @@ async def get_summary(excel_file: UploadFile = File(...)):
             by_story_map[story]["warning"] += 1
         if status == "UNMATCHED":
             unmatched.append(el.get("ifc_name", ""))
+        total_warnings += el.get("warning_count", 0)
 
     by_story = [
         {"story": story, "total": counts["total"],
@@ -79,25 +83,13 @@ async def get_summary(excel_file: UploadFile = File(...)):
         for story, counts in sorted(by_story_map.items())
     ]
 
-    # DEBUG — ilk elemanın tüm key'lerini ve section_map boyutunu response'a ekle
-    debug_info = {
-        "section_map_size": len(section_map),
-        "section_map_keys_sample": list(section_map.keys())[:5],
-        "first_element_keys": list(enriched[0].keys()) if enriched else [],
-        "first_element_sec": {
-            "sec_depth": enriched[0].get("sec_depth") if enriched else None,
-            "sec_width": enriched[0].get("sec_width") if enriched else None,
-            "excel_section": enriched[0].get("excel_section") if enriched else None,
-        }
-    }
-
     return {
         "total": len(enriched),
         "status_counts": dict(status_counts),
         "by_story": by_story,
         "unmatched_elements": unmatched,
+        "total_warnings": total_warnings,
         "elements": enriched,
-        "debug": debug_info,
     }
 
 
@@ -146,7 +138,6 @@ def _build_ifc_elements_from_connectivity(connectivity, excel_rows=None, section
                 x = points[pi]["x"]
                 y = points[pi]["y"]
 
-        # Kesit boyutları — section_map'ten al
         section_name = row.get("excel_section", "")
         sec_info = section_map.get(section_name, {})
         sec_depth = sec_info.get("depth", 0.3)

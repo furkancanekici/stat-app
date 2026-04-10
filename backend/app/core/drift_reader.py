@@ -44,6 +44,8 @@ def read_story_drifts(file_bytes: bytes) -> dict:
 
     df = pd.read_excel(BytesIO(file_bytes), sheet_name=sheet, header=hrow)
     df.columns = df.columns.str.strip()
+    # ETABS API boşluksuz isim verebilir
+    df.columns = df.columns.str.replace("OutputCase", "Output Case")
     df = df[df["Story"].notna() & (df["Story"].astype(str).str.strip() != "")]
 
     # Sadece deprem yük durumlarını al (EQX, EQY veya Seismic içeren)
@@ -95,6 +97,7 @@ def read_torsion_irregularity(file_bytes: bytes) -> dict:
 
     df = pd.read_excel(BytesIO(file_bytes), sheet_name=sheet, header=hrow)
     df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.replace("OutputCase", "Output Case")
     df = df[df["Story"].notna() & (df["Story"].astype(str).str.strip() != "")]
 
     # Deprem yükleri

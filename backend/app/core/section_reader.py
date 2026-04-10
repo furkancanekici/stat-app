@@ -71,8 +71,14 @@ def read_sections(file_bytes: bytes) -> dict:
         r22 = _safe_float(row.get("R22"))  # mm
 
         if r33 > 0 and r22 > 0:
-            depth = r33 * SQRT12 / 1000  # mm → m
-            width = r22 * SQRT12 / 1000  # mm → m
+            # R33 mm cinsindeyse (>1) → mm→m dönüşümü yap
+            # R33 m cinsindeyse (<1) → zaten metre, direkt kullan
+            if r33 > 1:
+                depth = r33 * SQRT12 / 1000  # mm → m
+                width = r22 * SQRT12 / 1000  # mm → m
+            else:
+                depth = r33 * SQRT12  # m → m
+                width = r22 * SQRT12  # m → m
         else:
             area = _safe_float(row.get("Area"))  # cm²
             i33 = _safe_float(row.get("I33"))    # cm⁴

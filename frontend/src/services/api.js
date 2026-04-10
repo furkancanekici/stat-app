@@ -39,3 +39,30 @@ export async function compareRevisions(oldFile, newFile) {
   const res = await api.post("/compare", form);
   return res.data;
 }
+
+// ─── ETABS API ───
+
+export async function checkEtabsStatus() {
+  const res = await api.get("/etabs/status");
+  return res.data;
+}
+
+export async function analyzeFromEtabs(modelPath = null, skipAnalysis = false, skipDesign = false) {
+  const params = new URLSearchParams();
+  if (modelPath) params.append("model_path", modelPath);
+  if (skipAnalysis) params.append("skip_analysis", "true");
+  if (skipDesign) params.append("skip_design", "true");
+  const res = await api.post(`/etabs/analyze?${params.toString()}`);
+  return res.data;
+}
+
+export async function exportEtabsExcel(modelPath = null, skipAnalysis = false, skipDesign = false) {
+  const params = new URLSearchParams();
+  if (modelPath) params.append("model_path", modelPath);
+  if (skipAnalysis) params.append("skip_analysis", "true");
+  if (skipDesign) params.append("skip_design", "true");
+  const res = await api.post(`/etabs/export?${params.toString()}`, null, {
+    responseType: "blob",
+  });
+  return res.data;
+}

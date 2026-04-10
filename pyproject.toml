@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "comtypes>=1.4.16",
     "fastapi>=0.135.1",
     "ifcopenshell>=0.8.4.post1",
     "openpyxl>=3.1.5",

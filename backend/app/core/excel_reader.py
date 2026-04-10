@@ -74,7 +74,7 @@ def _read_steel(file_bytes: bytes) -> list[dict]:
 def _read_concrete_col(file_bytes: bytes) -> list[dict]:
     """Beton kolon: Conc Col Sum - TS 500-2000"""
     xl = pd.ExcelFile(BytesIO(file_bytes))
-    sheet = next((s for s in xl.sheet_names if "Conc Col" in s), None)
+    sheet = next((s for s in xl.sheet_names if "Conc Col" in s or "Concrete Column" in s), None)
     if not sheet:
         return []
 

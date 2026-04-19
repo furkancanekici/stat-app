@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import useAppStore from "../../store/useAppStore";
 
-const STORY_HEIGHT = 3.0;
+const DEFAULT_STORY_HEIGHT = 3.0;
 const DEFAULT_SECTION = 0.3;
 const HOVER_EMISSIVE = 0.35;
 
@@ -53,7 +53,7 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
   const targetRef = useRef(new THREE.Vector3(5, 4.5, 5));
   const sphericalRef = useRef({ theta: Math.PI / 4, phi: Math.PI / 3, radius: 30 });
 
-  const { elements, statusFilter, activeStory, bgColor, statusColors, selectedElement } = useAppStore();
+  const { elements, statusFilter, activeStory, bgColor, statusColors, selectedElement, typeOpacity } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [tooltip, setTooltip] = useState(null);
 
@@ -68,7 +68,6 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
     a.click();
   }, []);
 
-  // Expose screenshot to parent
   useEffect(() => {
     if (mountRef.current) mountRef.current._takeScreenshot = takeScreenshot;
   }, [takeScreenshot]);
@@ -146,7 +145,6 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
         ray.setFromCamera(mouse, camera);
         const hits = ray.intersectObjects(meshesRef.current);
 
-        // Önceki hover'ı temizle
         if (hoveredRef.current) {
           hoveredRef.current.material.emissiveIntensity = 0;
           hoveredRef.current = null;
@@ -158,14 +156,19 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
           hoveredRef.current = mesh;
           mount.style.cursor = "pointer";
 
-          // Tooltip
           const el = elements.find(e => e.ifc_global_id === mesh.userData.elementId);
           if (el) {
+            const typeLabel = {
+              IfcBeam: "Kiriş",
+              IfcColumn: "Kolon",
+              IfcWall: "Perde",
+              IfcSlab: "Döşeme",
+            }[el.ifc_type] || el.ifc_type;
             setTooltip({
               x: e.clientX - rect.left + 12,
               y: e.clientY - rect.top - 8,
               name: el.ifc_name,
-              type: el.ifc_type === "IfcBeam" ? "Kiriş" : "Kolon",
+              type: typeLabel,
               story: el.ifc_story,
               status: el.status,
               uc: el.unity_check,
@@ -245,7 +248,6 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
     };
   }, []);
 
-  // Arka plan rengi değişimi
   useEffect(() => {
     if (sceneRef.current) sceneRef.current.background = new THREE.Color(bgColor);
   }, [bgColor]);
@@ -254,7 +256,6 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
   useEffect(() => {
     if (!sceneRef.current || elements.length === 0) return;
 
-    // Temizle (outline hariç scene objeleri)
     meshesRef.current.forEach((m) => { sceneRef.current.remove(m); m.geometry.dispose(); m.material.dispose(); });
     meshesRef.current = [];
     if (outlineRef.current) { sceneRef.current.remove(outlineRef.current); outlineRef.current = null; }
@@ -266,18 +267,25 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
 
     filtered.forEach((el) => {
+      // Kat yüksekliği element'ten gelir (yoksa default)
+      const storyHeight = el.story_height ?? DEFAULT_STORY_HEIGHT;
+
       const color = statusColors[el.status] || statusColors.UNMATCHED || "#64748b";
       const isBeam = el.ifc_type === "IfcBeam";
+      const isSlab = el.ifc_type === "IfcSlab";
       const secDepth = el.sec_depth || DEFAULT_SECTION;
       const secWidth = el.sec_width || DEFAULT_SECTION;
 
       const isWire = viewMode === "wireframe";
       const isTrans = viewMode === "transparent";
 
+      // Kullanıcının tip bazlı opacity ayarını uygula
+      const userOpacity = typeOpacity?.[el.ifc_type] ?? 0.85;
+
       const material = new THREE.MeshLambertMaterial({
         color: new THREE.Color(color),
         transparent: true,
-        opacity: isTrans ? 0.3 : 0.85,
+        opacity: isTrans ? 0.3 : userOpacity,
         wireframe: isWire,
         emissive: new THREE.Color(color),
         emissiveIntensity: 0,
@@ -288,7 +296,8 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
       if (isBeam) {
         const pi_x = el.pi_x ?? el.x ?? 0, pi_y = el.pi_y ?? el.y ?? 0;
         const pj_x = el.pj_x ?? (el.x ?? 0) + 1, pj_y = el.pj_y ?? el.y ?? 0;
-        const elev = (el.z ?? 0) + STORY_HEIGHT;
+        // Kiriş üst kat seviyesinde (alt z + storyHeight)
+        const elev = (el.z ?? 0) + storyHeight;
         const dx = pj_x - pi_x, dy = pj_y - pi_y;
         const length = Math.max(Math.sqrt(dx * dx + dy * dy), 0.5);
 
@@ -299,14 +308,28 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
         minX = Math.min(minX, pi_x, pj_x); maxX = Math.max(maxX, pi_x, pj_x);
         minZ = Math.min(minZ, pi_y, pj_y); maxZ = Math.max(maxZ, pi_y, pj_y);
         minY = Math.min(minY, elev); maxY = Math.max(maxY, elev);
+      } else if (isSlab) {
+        // Döşeme: ince geniş plak
+        const cx = el.x ?? 0, cy = el.y ?? 0, zBase = el.z ?? 0;
+        const slabLx = el.slab_lx ?? 10;
+        const slabLy = el.slab_ly ?? 10;
+        const slabT = el.slab_thickness ?? 0.2;
+
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(slabLx, slabT, slabLy), material);
+        mesh.position.set(cx, zBase + slabT / 2, cy);
+
+        minX = Math.min(minX, cx - slabLx / 2); maxX = Math.max(maxX, cx + slabLx / 2);
+        minZ = Math.min(minZ, cy - slabLy / 2); maxZ = Math.max(maxZ, cy + slabLy / 2);
+        minY = Math.min(minY, zBase); maxY = Math.max(maxY, zBase + slabT);
       } else {
+        // Kolon veya Perde (kolon gibi çizilir)
         const cx = el.x ?? 0, cy = el.y ?? 0, baseElev = el.z ?? 0;
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(secWidth, STORY_HEIGHT, secDepth), material);
-        mesh.position.set(cx, baseElev + STORY_HEIGHT / 2, cy);
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(secWidth, storyHeight, secDepth), material);
+        mesh.position.set(cx, baseElev + storyHeight / 2, cy);
 
         minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
         minZ = Math.min(minZ, cy); maxZ = Math.max(maxZ, cy);
-        minY = Math.min(minY, baseElev); maxY = Math.max(maxY, baseElev + STORY_HEIGHT);
+        minY = Math.min(minY, baseElev); maxY = Math.max(maxY, baseElev + storyHeight);
       }
 
       mesh.userData.elementId = el.ifc_global_id;
@@ -330,12 +353,11 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
         cam.lookAt(targetRef.current);
       }
     }
-  }, [elements, statusFilter, activeStory, statusColors, viewMode]);
+  }, [elements, statusFilter, activeStory, statusColors, viewMode, typeOpacity]);
 
   // ─── Seçili eleman outline ───
   useEffect(() => {
     if (!sceneRef.current) return;
-    // Eski outline'ı kaldır
     if (outlineRef.current) {
       sceneRef.current.remove(outlineRef.current);
       outlineRef.current.geometry.dispose();
@@ -343,7 +365,6 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
       outlineRef.current = null;
     }
     if (!selectedElement) return;
-
     const mesh = meshesRef.current.find(m => m.userData.elementId === selectedElement);
     if (mesh) {
       const outline = createOutline(mesh, "#5b9cf6");
@@ -358,7 +379,6 @@ export default function IFCScene({ onElementClick, viewMode = "solid" }) {
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
 
-      {/* Tooltip */}
       {tooltip && (
         <div style={{
           position: "absolute",

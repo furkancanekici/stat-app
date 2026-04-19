@@ -66,3 +66,17 @@ export async function exportEtabsExcel(modelPath = null, skipAnalysis = false, s
   });
   return res.data;
 }
+
+// ─── PRELIMINARY API ───
+
+// ============== PRELIMINARY DESIGN ==============
+
+export async function designPreliminary(payload) {
+  const resp = await api.post("/preliminary/design", payload);
+  return resp.data;
+}
+
+export async function designPreliminaryFast(payload) {
+  const resp = await api.post("/preliminary/design-fast", payload);
+  return resp.data;
+}

@@ -8,6 +8,7 @@ export default function Navbar() {
 
   const links = [
     { path: "/",       label: "Yükle",  minStep: 1 },
+    { path: "/preliminary", label: "Ön Tasarım", minStep: 1 },
     { path: "/viewer", label: "3D",     minStep: 3 },
     { path: "/report", label: "Rapor",  minStep: 3 },
   ];

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import validate, enrich, compare, etabs
+from app.routers import validate, enrich, compare, etabs, preliminary
 
 app = FastAPI(title="STAT API", version="0.3.0")
 
@@ -15,6 +15,7 @@ app.include_router(validate.router, prefix="/api")
 app.include_router(enrich.router, prefix="/api")
 app.include_router(compare.router, prefix="/api")
 app.include_router(etabs.router, prefix="/api")
+app.include_router(preliminary.router, prefix="/api")
 
 
 @app.get("/api/health")

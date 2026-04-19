@@ -3,12 +3,13 @@ name = "stat-app"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "comtypes>=1.4.16",
     "fastapi>=0.135.1",
     "ifcopenshell>=0.8.4.post1",
     "openpyxl>=3.1.5",
+    "openseespy>=3.8.0.0",
     "pandas>=3.0.1",
     "python-multipart>=0.0.22",
     "uvicorn>=0.41.0",

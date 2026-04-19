@@ -18,6 +18,7 @@ export default function ViewerPage() {
     loading, setLoading, setError,
     bgColor, setBgColor,
     statusColors, setStatusColor, resetStatusColors,
+    typeOpacity, setTypeOpacity, resetTypeOpacity,
   } = useAppStore();
 
   const [stories, setStories] = useState([]);
@@ -250,6 +251,43 @@ export default function ViewerPage() {
                     <span style={{ fontSize: "9px", color: "#4a5c7a", fontFamily: "monospace" }}>{color}</span>
                   </div>
                 ))}
+              </div>
+              {/* Tip şeffaflığı */}
+              <div style={{ marginTop: "14px", marginBottom: "10px" }}>
+                <label style={settingLabel}>Şeffaflık</label>
+                {[
+                  { key: "IfcColumn", label: "Kolon" },
+                  { key: "IfcBeam", label: "Kiriş" },
+                  { key: "IfcWall", label: "Perde" },
+                  { key: "IfcSlab", label: "Döşeme" },
+                ].map(({ key, label }) => (
+                  <div key={key} style={{ marginBottom: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2px" }}>
+                      <span style={{ fontSize: "11px", color: "#d8e4f8" }}>{label}</span>
+                      <span style={{ fontSize: "9px", color: "#4a5c7a", fontFamily: "monospace" }}>
+                        {Math.round((typeOpacity?.[key] ?? 0.85) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range" min="0" max="100" step="5"
+                      value={Math.round((typeOpacity?.[key] ?? 0.85) * 100)}
+                      onChange={(e) => setTypeOpacity(key, parseInt(e.target.value) / 100)}
+                      style={{
+                        width: "100%", accentColor: "#5b9cf6",
+                        cursor: "pointer", height: "4px",
+                      }}
+                    />
+                  </div>
+                ))}
+                <button onClick={resetTypeOpacity}
+                  style={{
+                    width: "100%", padding: "4px", background: "transparent",
+                    border: "1px solid #2a3650", borderRadius: "4px",
+                    color: "#4a5c7a", fontSize: "9px", cursor: "pointer",
+                    letterSpacing: "1px", marginTop: "4px",
+                  }}>
+                  Şeffaflığı Sıfırla
+                </button>
               </div>
               <button onClick={resetStatusColors}
                 style={{

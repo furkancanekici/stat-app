@@ -8,6 +8,13 @@ const DEFAULT_STATUS_COLORS = {
   UNMATCHED: "#64748b",
 };
 
+const DEFAULT_TYPE_OPACITY = {
+  IfcColumn: 0.85,
+  IfcBeam: 0.85,
+  IfcWall: 0.85,
+  IfcSlab: 0.20,   // döşeme varsayılan %80 şeffaf
+};
+
 const useAppStore = create((set) => ({
   // Dosyalar
   ifcFile: null,
@@ -27,6 +34,7 @@ const useAppStore = create((set) => ({
   // Görünüm
   bgColor: "#080b10",
   statusColors: { ...DEFAULT_STATUS_COLORS },
+  typeOpacity: { ...DEFAULT_TYPE_OPACITY },    // ← YENİ SATIR
 
   // UI
   step: 1,
@@ -57,6 +65,12 @@ const useAppStore = create((set) => ({
   })),
   resetStatusColors: () => set({ statusColors: { ...DEFAULT_STATUS_COLORS } }),
 
+  // ↓ YENİ 2 ACTION
+  setTypeOpacity: (type, opacity) => set((state) => ({
+    typeOpacity: { ...state.typeOpacity, [type]: opacity },
+  })),
+  resetTypeOpacity: () => set({ typeOpacity: { ...DEFAULT_TYPE_OPACITY } }),
+
   reset: () => set({
     ifcFile: null,
     excelFile: null,
@@ -69,6 +83,7 @@ const useAppStore = create((set) => ({
     statusFilter: ["OK", "WARNING", "FAIL", "BRITTLE", "UNMATCHED"],
     bgColor: "#080b10",
     statusColors: { ...DEFAULT_STATUS_COLORS },
+    typeOpacity: { ...DEFAULT_TYPE_OPACITY },   // ← YENİ SATIR
     step: 1,
     loading: false,
     error: null,
